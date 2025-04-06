@@ -205,3 +205,9 @@ class AttendifyDatabase:
                 db.add(session)
                 await db.commit()
                 return token
+
+    async def remove_session(self, token: str):
+        async with self._commit_lock:
+            async with self.session() as db:
+                await db.execute(delete(Session).where(Session.token == token))
+                await db.commit()

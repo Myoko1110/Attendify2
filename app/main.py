@@ -17,11 +17,6 @@ async def on_startup():
     await db.connect()
 
 
-@app.get("/")
-async def root():
-    return {"message": "Hello World"}
-
-
 @app.exception_handler(HTTPException)
 def on_api_error(_, exc: HTTPException):
     return JSONResponse(status_code=exc.status_code, content=dict(
@@ -34,5 +29,13 @@ def on_api_error(_, exc: HTTPException):
 def on_internal_exception_handler(_, __: Exception):
     return JSONResponse(status_code=500, content=dict(
         error="Internal Server Error",
+        error_code=-1,
+    ))
+
+
+@app.exception_handler(404)
+def on_internal_exception_handler(_, __: Exception):
+    return JSONResponse(status_code=404, content=dict(
+        error="Page Not Found",
         error_code=-1,
     ))

@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from google_auth_oauthlib.flow import Flow
+from starlette.requests import HTTPConnection
 from starlette.responses import Response
 
 from app.abc.api_error import APIErrorCode
@@ -21,7 +22,6 @@ async def login(response: Response, code: str):
 
     flow.fetch_token(code=code)
 
-
     session = flow.authorized_session()
     email = session.get("https://www.googleapis.com/userinfo/v2/me").json()
 
@@ -36,6 +36,15 @@ async def login(response: Response, code: str):
         value=token,
         max_age=60 * 60 * 24 * 30,
     )
+    return dict(result=True)
+
+
+@router.get("/logout")
+async def logout(response: Response, connection: HTTPConnection):
+    session = connection.cookies.get("session")
+    if session:
+        await db.delete_session()
+    response.delete_cookie("session")
     return dict(result=True)
 
 
