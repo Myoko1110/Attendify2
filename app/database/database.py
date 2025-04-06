@@ -5,6 +5,7 @@ from pathlib import Path
 from uuid import UUID
 
 from sqlalchemy import URL, delete, select, update
+from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession, async_sessionmaker, \
     create_async_engine
 from sqlalchemy.orm import selectinload
@@ -110,7 +111,7 @@ class AttendifyDatabase:
                 stmt = stmt.where(Member.generation == generation)
 
             result = await db.execute(stmt)
-            return [r for r in result.scalars().all()]
+            return [r[0] for r in result.all()]
 
     async def add_member(self, member: Member) -> list[UUID]:
         async with self._commit_lock:
@@ -152,5 +153,22 @@ class AttendifyDatabase:
                 if m.role is not None:
                     stmt = stmt.values(role=m.role)
 
+                await db.execute(stmt)
+                await db.commit()
+
+    async def get_schedules(self) -> list[Schedule]:
+        async with self.session() as db:
+            result = await db.execute(select(Schedule))
+            return [r[0] for r in result.all()]
+
+    async def add_schedule(self, schedule: Schedule):
+        async with self._commit_lock:
+            async with self.session() as db:
+                stmt = insert(Schedule).values(date=schedule.date, type=schedule.type).on_conflict_do_update(
+                    index_elements=["date"],
+                    set_={
+                        "type": schedule.type,
+                    },
+                )
                 await db.execute(stmt)
                 await db.commit()

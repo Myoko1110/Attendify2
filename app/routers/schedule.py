@@ -1,0 +1,25 @@
+from fastapi import APIRouter, Query
+
+from app import schemas
+from app.database import db, models
+
+router = APIRouter(prefix="/schedule", tags=["Schedule"])
+
+
+@router.get(
+    "s",
+    summary="予定を取得",
+    description="予定を取得します。",
+)
+async def get_schedule() -> list[schemas.Schedule]:
+    return [schemas.Schedule.create(a) for a in await db.get_schedules()]
+
+
+@router.post(
+    "",
+    summary="予定を登録",
+    description="予定を登録します。すでに存在する場合は更新されます。",
+)
+async def post_schedule(s: schemas.Schedule = Query()) -> schemas.ScheduleOperationalResult:
+    await db.add_schedule(models.Schedule(date=s.date, type=s.type))
+    return schemas.ScheduleOperationalResult(result=True, date=s.date)
