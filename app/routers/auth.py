@@ -1,6 +1,5 @@
 from fastapi import APIRouter
 from google_auth_oauthlib.flow import Flow
-from oauthlib.oauth2 import InvalidGrantError
 from starlette.responses import Response
 
 from app.abc.api_error import APIErrorCode

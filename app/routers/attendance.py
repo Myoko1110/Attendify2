@@ -4,10 +4,10 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Form
 from sqlalchemy.exc import IntegrityError
 
-from app import schemas, utils
+from app import schemas
 from app.abc.api_error import APIErrorCode
 from app.abc.part import Part
-from app.database import models, db
+from app.database import db, models
 from app.dependencies import get_valid_session
 
 router = APIRouter(prefix="/attendance", tags=["Attendance"], dependencies=[Depends(get_valid_session)])
