@@ -1,15 +1,16 @@
 import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Form
+from fastapi import APIRouter, Depends, Form
 from sqlalchemy.exc import IntegrityError
 
 from app import schemas, utils
 from app.abc.api_error import APIErrorCode
 from app.abc.part import Part
 from app.database import models, db
+from app.dependencies import get_valid_session
 
-router = APIRouter(prefix="/attendance", tags=["Attendance"])
+router = APIRouter(prefix="/attendance", tags=["Attendance"], dependencies=[Depends(get_valid_session)])
 
 
 @router.get(
@@ -27,8 +28,7 @@ async def get_attendances(part: Part = None, generation: int = None, date: datet
     description="出欠情報を登録します。出欠情報（同じ部員・日にち）が存在する場合はエラーを返します。",
 )
 async def post_attendance(a: schemas.AttendancesParams = Form()) -> schemas.AttendanceOperationalResult:
-    now = utils.now()
-    attendance = models.Attendance(date=a.date, member_id=a.member_id, attendance=a.attendance, created_at=now, updated_at=now)
+    attendance = models.Attendance(date=a.date, member_id=a.member_id, attendance=a.attendance)
 
     try:
         attendance_id = await db.add_attendance(attendance)
@@ -44,8 +44,7 @@ async def post_attendance(a: schemas.AttendancesParams = Form()) -> schemas.Atte
     description="出欠情報を登録します。出欠情報（同じ部員・日にち）が存在する場合はエラーを返します。",
 )
 async def post_attendances(attendances: list[schemas.AttendancesParams]) -> schemas.AttendancesOperationalResult:
-    now = utils.now()
-    attendance_list = [models.Attendance(date=a.date, member_id=a.member_id, attendance=a.attendance, created_at=now, updated_at=now) for a in attendances]
+    attendance_list = [models.Attendance(date=a.date, member_id=a.member_id, attendance=a.attendance) for a in attendances]
 
     try:
         await db.add_attendances(attendance_list)

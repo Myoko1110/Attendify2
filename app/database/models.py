@@ -1,10 +1,12 @@
+from datetime import datetime, timezone
 from enum import Enum
 from uuid import uuid4
 
-from sqlalchemy import Column, Date, DateTime, ForeignKey, Integer, String, TypeDecorator, \
+from sqlalchemy import Column, Date, ForeignKey, Integer, String, TypeDecorator, \
     UniqueConstraint, Uuid
 from sqlalchemy.orm import declarative_base, relationship
 
+from app import utils
 from app.abc.part import Part
 from app.abc.role import Role
 from app.abc.schedule_type import ScheduleType
@@ -30,6 +32,22 @@ class EnumType(TypeDecorator):
             if not isinstance(value, str):
                 raise TypeError("Value should have str type")
             return self.enum_class(value)
+
+
+class AwareDateTime(TypeDecorator):
+    impl = String
+
+    def process_bind_param(self, value: datetime, dialect):
+        if value is not None:
+            if value.tzinfo is None:
+                raise ValueError("Timezone-aware datetime required.")
+            return value.isoformat()
+        return None
+
+    def process_result_value(self, value, dialect):
+        if value is not None:
+            return datetime.fromisoformat(value).astimezone(timezone.utc)
+        return None
 
 
 class Member(Base):
@@ -58,8 +76,8 @@ class Attendance(Base):
     date = Column(Date, nullable=False)
     member_id = Column(Uuid, ForeignKey("members.id"), nullable=False)
     attendance = Column(String(64), nullable=False)
-    created_at = Column(DateTime, nullable=False)
-    updated_at = Column(DateTime, nullable=False)
+    created_at = Column(AwareDateTime, nullable=False, default=utils.now())
+    updated_at = Column(AwareDateTime, nullable=False, onupdate=utils.now())
 
     member = relationship("Member")
 
@@ -74,9 +92,8 @@ class Schedule(Base):
 class Session(Base):
     __tablename__ = "sessions"
 
-    id = Column(String(256), primary_key=True)
+    token = Column(String(256), primary_key=True)
     member_id = Column(Uuid, ForeignKey("members.id"), nullable=False)
-    created_at = Column(DateTime, nullable=False)
-    updated_at = Column(DateTime, nullable=False)
+    created_at = Column(AwareDateTime, nullable=False, default=utils.now())
 
     member = relationship("Member")

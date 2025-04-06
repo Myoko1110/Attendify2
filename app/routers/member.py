@@ -1,14 +1,15 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Form
+from fastapi import APIRouter, Depends, Form
 
 from app import schemas
 from app.abc.part import Part
 from app.database import db, models
+from app.dependencies import get_valid_session
 from app.schemas import MemberOperationalResult, MemberParams, MemberParamsOptional, \
     MembersOperationalResult
 
-router = APIRouter(prefix="/member", tags=["Member"])
+router = APIRouter(prefix="/member", tags=["Member"], dependencies=[Depends(get_valid_session)])
 
 
 @router.get(

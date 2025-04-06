@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
 from app import schemas
 from app.database import db, models
+from app.dependencies import get_valid_session
 
-router = APIRouter(prefix="/schedule", tags=["Schedule"])
+router = APIRouter(prefix="/schedule", tags=["Schedule"], dependencies=[Depends(get_valid_session)])
 
 
 @router.get(
