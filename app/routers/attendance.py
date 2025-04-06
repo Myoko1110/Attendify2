@@ -13,7 +13,7 @@ router = APIRouter(prefix="/attendance", tags=["Attendance"])
 
 
 @router.get(
-    "s/",
+    "s",
     summary="出欠情報を取得",
     description="出欠情報を取得します。",
 )
@@ -22,13 +22,13 @@ async def get_attendances(part: Part = None, generation: int = None, date: datet
 
 
 @router.post(
-    "/",
+    "",
     summary="出欠情報を登録",
     description="出欠情報を登録します。出欠情報（同じ部員・日にち）が存在する場合はエラーを返します。",
 )
-async def post_attendance(member_id: UUID = Form(), attendance: str = Form(), date: datetime.date = Form()) -> schemas.AttendanceOperationalResult:
+async def post_attendance(a: schemas.AttendancesParams = Form()) -> schemas.AttendanceOperationalResult:
     now = utils.now()
-    attendance = models.Attendance(date=date, member_id=member_id, attendance=attendance, created_at=now, updated_at=now)
+    attendance = models.Attendance(date=a.date, member_id=a.member_id, attendance=a.attendance, created_at=now, updated_at=now)
 
     try:
         attendance_id = await db.add_attendance(attendance)
@@ -39,7 +39,7 @@ async def post_attendance(member_id: UUID = Form(), attendance: str = Form(), da
 
 
 @router.post(
-    "s/",
+    "s",
     summary="出欠情報を登録",
     description="出欠情報を登録します。出欠情報（同じ部員・日にち）が存在する場合はエラーを返します。",
 )

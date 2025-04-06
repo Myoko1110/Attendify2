@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession, a
 from sqlalchemy.orm import selectinload
 
 from app.database.models import *
+from app.schemas import MemberParamsOptional
 
 
 class AttendifyDatabase:
@@ -120,3 +121,36 @@ class AttendifyDatabase:
                 member_id = member.id
                 await db.commit()
                 return member_id
+
+    async def add_members(self, members: list[Member]):
+        async with self._commit_lock:
+            async with self.session() as db:
+                db.add_all(members)
+                await db.commit()
+
+    async def remove_member(self, member_id: UUID):
+        async with self._commit_lock:
+            async with self.session() as db:
+                await db.execute(delete(Member).where(Member.id == member_id))
+                await db.commit()
+
+    async def update_member(self, member_id: UUID, m: MemberParamsOptional):
+        async with self._commit_lock:
+            async with self.session() as db:
+                stmt = update(Member).where(Member.id == member_id)
+
+                if m.part is not None:
+                    stmt = stmt.values(part=m.part)
+                if m.generation is not None:
+                    stmt = stmt.values(generation=m.generation)
+                if m.name is not None:
+                    stmt = stmt.values(name=m.name)
+                if m.name_kana is not None:
+                    stmt = stmt.values(name_kana=m.name_kana)
+                if m.email is not None:
+                    stmt = stmt.values(email=m.email)
+                if m.role is not None:
+                    stmt = stmt.values(role=m.role)
+
+                await db.execute(stmt)
+                await db.commit()

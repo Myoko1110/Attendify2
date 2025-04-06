@@ -29,6 +29,28 @@ class Member(BaseModel):
         )
 
 
+class MemberParams(BaseModel):
+    part: Part
+    generation: int
+    name: str
+    name_kana: str
+    email: str
+    role: Role | None
+
+
+class MemberParamsOptional(BaseModel):
+    part: Part | None
+    generation: int | None
+    name: str | None
+    name_kana: str | None
+    email: str | None
+    role: Role | None
+
+
 class MemberOperationalResult(BaseModel):
     result: bool
     member_id: UUID | None
+
+
+class MembersOperationalResult(BaseModel):
+    result: bool
