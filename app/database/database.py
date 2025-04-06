@@ -193,7 +193,7 @@ class AttendifyDatabase:
                 await db.execute(stmt)
                 await db.commit()
 
-    async def create_session(self, member: Member) -> str:
+    async def create_session(self, member: Member) -> tuple[str, Member]:
         token = self.generate_token()
         session = Session(
             token=token,
@@ -204,7 +204,7 @@ class AttendifyDatabase:
             async with self.session() as db:
                 db.add(session)
                 await db.commit()
-                return token
+                return token, session.member
 
     async def remove_session(self, token: str):
         async with self._commit_lock:

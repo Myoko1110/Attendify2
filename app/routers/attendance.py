@@ -25,7 +25,7 @@ async def get_attendances(part: Part = None, generation: int = None, date: datet
 @router.post(
     "",
     summary="出欠情報を登録",
-    description="出欠情報を登録します。出欠情報（同じ部員・日にち）が存在する場合はエラーを返します。",
+    description="出欠情報を登録します。すでに出欠情報（同じ部員・日にち）が存在する場合はエラーを返します。",
 )
 async def post_attendance(a: schemas.AttendancesParams = Form()) -> schemas.AttendanceOperationalResult:
     attendance = models.Attendance(date=a.date, member_id=a.member_id, attendance=a.attendance)
@@ -41,7 +41,7 @@ async def post_attendance(a: schemas.AttendancesParams = Form()) -> schemas.Atte
 @router.post(
     "s",
     summary="出欠情報を登録",
-    description="出欠情報を登録します。出欠情報（同じ部員・日にち）が存在する場合はエラーを返します。",
+    description="出欠情報を登録します。すでに出欠情報（同じ部員・日にち）が存在する場合はエラーを返します。",
 )
 async def post_attendances(attendances: list[schemas.AttendancesParams]) -> schemas.AttendancesOperationalResult:
     attendance_list = [models.Attendance(date=a.date, member_id=a.member_id, attendance=a.attendance) for a in attendances]

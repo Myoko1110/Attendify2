@@ -1,10 +1,12 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from google_auth_oauthlib.flow import Flow
 from starlette.requests import HTTPConnection
 from starlette.responses import Response
 
 from app.abc.api_error import APIErrorCode
 from app.database import db
+from app.dependencies import get_valid_session
+from app.schemas import Member
 
 router = APIRouter()
 
@@ -17,11 +19,13 @@ flow = Flow.from_client_secrets_file(
 )
 
 
-@router.get("/login")
-async def login(response: Response, code: str):
-
+@router.get(
+    "/login",
+    summary="ログイン",
+    description="Googleアカウントでログインします。",
+)
+async def login(response: Response, code: str) -> Member:
     flow.fetch_token(code=code)
-
     session = flow.authorized_session()
     email = session.get("https://www.googleapis.com/userinfo/v2/me").json()
 
@@ -29,17 +33,22 @@ async def login(response: Response, code: str):
     if not member:
         raise APIErrorCode.PERMISSION_DENIED.of("Permission denied", 403)
 
-    token = await db.create_session(member)
+    token, member = await db.create_session(member)
 
     response.set_cookie(
         key="session",
         value=token,
         max_age=60 * 60 * 24 * 30,
     )
-    return dict(result=True)
+    return member
 
 
-@router.get("/logout")
+@router.get(
+    "/logout",
+    summary="ログアウト",
+    description="ログアウトします。",
+    dependencies=[Depends(get_valid_session)]
+)
 async def logout(response: Response, connection: HTTPConnection):
     session = connection.cookies.get("session")
     if session:
@@ -48,6 +57,10 @@ async def logout(response: Response, connection: HTTPConnection):
     return dict(result=True)
 
 
-@router.get("/authorization_url")
+@router.get(
+    "/authorization_url",
+    summary="Google認証URL",
+    description="Google認証URLを取得します。",
+)
 async def get_authorization_url():
     return flow.authorization_url()[0]
