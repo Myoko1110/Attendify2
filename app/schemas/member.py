@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from app.abc.part import Part
 from app.abc.role import Role
@@ -39,12 +39,12 @@ class MemberParams(BaseModel):
 
 
 class MemberParamsOptional(BaseModel):
-    part: Part | None
-    generation: int | None
-    name: str | None
-    name_kana: str | None
-    email: str | None
-    role: Role | None
+    part: Part | None = None
+    generation: int | None = None
+    name: str | None = None
+    name_kana: str | None = None
+    email: str | None = None
+    role: Role | None = None
 
 
 class MemberOperationalResult(BaseModel):
