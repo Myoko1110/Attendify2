@@ -33,14 +33,14 @@ async def login(response: Response, code: str) -> Member:
     if not member:
         raise APIErrorCode.PERMISSION_DENIED.of("Permission denied", 403)
 
-    token, member = await db.create_session(member)
+    s = await db.create_session(member)
 
     response.set_cookie(
         key="session",
-        value=token,
+        value=s.token,
         max_age=60 * 60 * 24 * 30,
     )
-    return member
+    return s.member
 
 
 @router.get(
