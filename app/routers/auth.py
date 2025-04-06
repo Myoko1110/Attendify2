@@ -8,7 +8,7 @@ from app.database import db
 from app.dependencies import get_valid_session
 from app.schemas import Member
 
-router = APIRouter()
+router = APIRouter(tags=["Authentication"], dependencies=[Depends(get_valid_session)])
 
 REDIRECT_URI = "http://localhost:3030/login"
 
