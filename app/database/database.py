@@ -1,6 +1,5 @@
 import asyncio
 import secrets
-from datetime import timedelta
 from pathlib import Path
 from uuid import UUID
 
@@ -10,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession, a
     create_async_engine
 from sqlalchemy.orm import selectinload
 
-from app import utils
 from app.database.models import *
 from app.schemas import MemberParamsOptional
 
@@ -129,7 +127,7 @@ class AttendifyDatabase:
             if not session:
                 return None
 
-            if session.created_at + timedelta(days=30) < utils.now():
+            if session.created_at + datetime.timedelta(days=30) < utils.now():
                 return None
             return session
 
@@ -191,6 +189,12 @@ class AttendifyDatabase:
                     },
                 )
                 await db.execute(stmt)
+                await db.commit()
+
+    async def remove_schedule(self, date: datetime.date):
+        async with self._commit_lock:
+            async with self.session() as db:
+                await db.execute(delete(Schedule).where(Schedule.date == date))
                 await db.commit()
 
     async def create_session(self, member: Member) -> Session:

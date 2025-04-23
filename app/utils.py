@@ -1,5 +1,5 @@
-from datetime import datetime, timezone
+import datetime
 
 
-def now() -> datetime:
-    return datetime.now(timezone.utc)
+def now() -> datetime.datetime:
+    return datetime.datetime.now(datetime.timezone.utc)

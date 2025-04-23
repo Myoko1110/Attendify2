@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+import datetime
 from enum import Enum
 from uuid import uuid4
 
@@ -37,7 +37,7 @@ class EnumType(TypeDecorator):
 class AwareDateTime(TypeDecorator):
     impl = String
 
-    def process_bind_param(self, value: datetime, dialect):
+    def process_bind_param(self, value: datetime.datetime, dialect):
         if value is not None:
             if value.tzinfo is None:
                 raise ValueError("Timezone-aware datetime required.")
@@ -46,7 +46,7 @@ class AwareDateTime(TypeDecorator):
 
     def process_result_value(self, value, dialect):
         if value is not None:
-            return datetime.fromisoformat(value).astimezone(timezone.utc)
+            return datetime.datetime.fromisoformat(value).astimezone(datetime.timezone.utc)
         return None
 
 

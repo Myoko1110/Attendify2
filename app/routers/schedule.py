@@ -1,3 +1,5 @@
+import datetime
+
 from fastapi import APIRouter, Depends, Query
 
 from app import schemas
@@ -24,3 +26,13 @@ async def get_schedule() -> list[schemas.Schedule]:
 async def post_schedule(s: schemas.Schedule = Query()) -> schemas.ScheduleOperationalResult:
     await db.add_schedule(models.Schedule(date=s.date, type=s.type))
     return schemas.ScheduleOperationalResult(result=True, date=s.date)
+
+
+@router.delete(
+    "/{date}",
+    summary="予定を削除",
+    description="予定を削除します。予定が存在しない場合でもエラーを返しません。",
+)
+async def delete_schedule(date: datetime.date) -> schemas.ScheduleOperationalResult:
+    await db.remove_schedule(date)
+    return schemas.ScheduleOperationalResult(result=True, date=date)
