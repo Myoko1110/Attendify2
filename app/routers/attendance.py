@@ -27,15 +27,16 @@ async def get_attendances(part: Part = None, generation: int = None, date: datet
     summary="出欠情報を登録",
     description="出欠情報を登録します。すでに出欠情報（同じ部員・日にち）が存在する場合はエラーを返します。",
 )
-async def post_attendance(a: schemas.AttendancesParams = Form()) -> schemas.AttendanceOperationalResult:
+async def post_attendance(a: schemas.AttendancesParams = Form()) -> schemas.Attendance:
     attendance = models.Attendance(date=a.date, member_id=a.member_id, attendance=a.attendance)
 
     try:
-        attendance_id = await db.add_attendance(attendance)
-    except IntegrityError:
+        attendance = await db.add_attendance(attendance)
+    except IntegrityError as e:
+        print(e)
         raise APIErrorCode.ALREADY_EXISTS_ATTENDANCE.of("Already exists attendance")
 
-    return schemas.AttendanceOperationalResult(result=True, attendance_id=attendance_id)
+    return attendance
 
 
 @router.post(

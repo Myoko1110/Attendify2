@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession, a
     create_async_engine
 from sqlalchemy.orm import selectinload
 
+from app import schemas
 from app.database.models import *
 from app.schemas import MemberParamsOptional
 
@@ -69,15 +70,15 @@ class AttendifyDatabase:
             result = await db.execute(stmt)
             return [r for r in result.scalars().all()]
 
-    async def add_attendance(self, attendance: Attendance) -> list[UUID]:
+    async def add_attendance(self, attendance: Attendance) -> schemas.Attendance:
         async with self._commit_lock:
             async with self.session() as db:
                 db.add(attendance)
                 await db.flush()
-                await db.refresh(attendance)
-                attendance_id = attendance.id
+                await db.refresh(attendance, ["member"])
+                attendance = schemas.Attendance.create(attendance)
                 await db.commit()
-                return attendance_id
+                return attendance
 
     async def add_attendances(self, attendances: list[Attendance]):
         async with self._commit_lock:
@@ -131,15 +132,15 @@ class AttendifyDatabase:
                 return None
             return session
 
-    async def add_member(self, member: Member) -> list[UUID]:
+    async def add_member(self, member: Member) -> schemas.Member:
         async with self._commit_lock:
             async with self.session() as db:
                 db.add(member)
                 await db.flush()
                 await db.refresh(member)
-                member_id = member.id
+                member = schemas.Member.create(member)
                 await db.commit()
-                return member_id
+                return member
 
     async def add_members(self, members: list[Member]):
         async with self._commit_lock:
@@ -170,6 +171,8 @@ class AttendifyDatabase:
                     stmt = stmt.values(email=m.email)
                 if m.role is not None:
                     stmt = stmt.values(role=m.role)
+                if m.lecture_day is not None:
+                    stmt = stmt.values(lecture_day=m.lecture_day)
 
                 await db.execute(stmt)
                 await db.commit()
@@ -208,7 +211,7 @@ class AttendifyDatabase:
             async with self.session() as db:
                 db.add(session)
                 await db.commit()
-                return session
+                return token
 
     async def remove_session(self, token: str):
         async with self._commit_lock:

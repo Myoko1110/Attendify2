@@ -3,7 +3,7 @@ from enum import Enum
 from uuid import uuid4
 
 from sqlalchemy import Column, Date, ForeignKey, Integer, String, TypeDecorator, \
-    UniqueConstraint, Uuid
+    UniqueConstraint, Uuid, JSON
 from sqlalchemy.orm import declarative_base, relationship
 
 from app import utils
@@ -38,10 +38,11 @@ class AwareDateTime(TypeDecorator):
     impl = String
 
     def process_bind_param(self, value: datetime.datetime, dialect):
+        print(value)
         if value is not None:
             if value.tzinfo is None:
                 raise ValueError("Timezone-aware datetime required.")
-            return value.isoformat()
+            return value.isoformat(timespec="seconds")
         return None
 
     def process_result_value(self, value, dialect):
@@ -56,13 +57,14 @@ class Member(Base):
         "sqlite_autoincrement": True,
     }
 
-    id = Column(Uuid, primary_key=True)
+    id = Column(Uuid, primary_key=True, default=uuid4)
     part = Column(EnumType(enum_class=Part), nullable=False)
     generation = Column(Integer, nullable=False)
     name = Column(String(64), nullable=False)
     name_kana = Column(String(64), nullable=False)
-    email = Column(String(64), nullable=False)
+    email = Column(String(64), unique=True, nullable=True)
     role = Column(EnumType(enum_class=Role), nullable=True)
+    lecture_day = Column(JSON, nullable=False, default=[])
 
 
 class Attendance(Base):
@@ -72,12 +74,12 @@ class Attendance(Base):
         {"sqlite_autoincrement": True},
     )
 
-    id = Column(Uuid, primary_key=True, default=uuid4)
+    id = Column(Uuid, nullable=False, primary_key=True, default=uuid4)
     date = Column(Date, nullable=False)
     member_id = Column(Uuid, ForeignKey("members.id"), nullable=False)
     attendance = Column(String(64), nullable=False)
-    created_at = Column(AwareDateTime, nullable=False, default=utils.now())
-    updated_at = Column(AwareDateTime, nullable=False, onupdate=utils.now())
+    created_at = Column(AwareDateTime, nullable=False, default=utils.now)
+    updated_at = Column(AwareDateTime, nullable=False, onupdate=utils.now, default=utils.now)
 
     member = relationship("Member")
 
@@ -94,6 +96,6 @@ class Session(Base):
 
     token = Column(String(256), primary_key=True)
     member_id = Column(Uuid, ForeignKey("members.id"), nullable=False)
-    created_at = Column(AwareDateTime, nullable=False, default=utils.now())
+    created_at = Column(AwareDateTime, nullable=False, default=utils.now)
 
     member = relationship("Member")

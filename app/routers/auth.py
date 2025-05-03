@@ -1,16 +1,15 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Form
 from google_auth_oauthlib.flow import Flow
-from starlette.requests import HTTPConnection
-from starlette.responses import Response
+from starlette.requests import Request
 
 from app.abc.api_error import APIErrorCode
 from app.database import db
 from app.dependencies import get_valid_session
 from app.schemas import Member
 
-router = APIRouter(tags=["Authentication"], dependencies=[Depends(get_valid_session)])
+router = APIRouter(tags=["Authentication"])
 
-REDIRECT_URI = "http://localhost:3030/login"
+REDIRECT_URI = "http://localhost:3039/login"
 
 flow = Flow.from_client_secrets_file(
     "client_secret.json",
@@ -19,28 +18,36 @@ flow = Flow.from_client_secrets_file(
 )
 
 
-@router.get(
+@router.post(
     "/login",
     summary="ログイン",
     description="Googleアカウントでログインします。",
 )
-async def login(response: Response, code: str) -> Member:
-    flow.fetch_token(code=code)
-    session = flow.authorized_session()
-    email = session.get("https://www.googleapis.com/userinfo/v2/me").json()
+async def login(request: Request, code: str = Form(), state: str = Form()) -> Member:
+    if request.session.get("state") != state:
+        raise APIErrorCode.INVALID_AUTHENTICATION_CREDENTIALS.of("Authentication failed", 400)
+
+    try:
+        flow.fetch_token(code=code)
+
+        session = flow.authorized_session()
+        email = session.get("https://www.googleapis.com/userinfo/v2/me").json()
+
+    except Exception as e:
+        print(e)
+        raise APIErrorCode.INVALID_AUTHENTICATION_CREDENTIALS.of("Authentication failed", 400)
 
     member = await db.get_member_by_email(email["email"])
     if not member:
         raise APIErrorCode.PERMISSION_DENIED.of("Permission denied", 403)
 
-    s = await db.create_session(member)
+    # TODO: roleで権限を絞る
 
-    response.set_cookie(
-        key="session",
-        value=s.token,
-        max_age=60 * 60 * 24 * 30,
-    )
-    return s.member
+    token = await db.create_session(member)
+    request.session["token"] = token
+    request.session.pop("state")
+
+    return member
 
 
 @router.get(
@@ -49,11 +56,12 @@ async def login(response: Response, code: str) -> Member:
     description="ログアウトします。",
     dependencies=[Depends(get_valid_session)]
 )
-async def logout(response: Response, connection: HTTPConnection):
-    session = connection.cookies.get("session")
-    if session:
-        await db.delete_session()
-    response.delete_cookie("session")
+async def logout(request: Request):
+    token = request.session.get("token")
+    if token:
+        await db.remove_session(token)
+
+    request.session.pop("token")
     return dict(result=True)
 
 
@@ -62,5 +70,7 @@ async def logout(response: Response, connection: HTTPConnection):
     summary="Google認証URL",
     description="Google認証URLを取得します。",
 )
-async def get_authorization_url():
-    return flow.authorization_url()[0]
+async def get_authorization_url(request: Request):
+    url, state = flow.authorization_url()
+    request.session["state"] = state
+    return dict(url=url, state=state)

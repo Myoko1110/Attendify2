@@ -1,15 +1,31 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import JSONResponse
 
 from .abc.api_error import APIError
 from .database import db
-from .routers import attendance, auth, member, schedule
+from .routers import attendance, auth, constant, member, schedule
 
 app = FastAPI()
-app.include_router(auth.router)
-app.include_router(attendance.router)
-app.include_router(member.router)
-app.include_router(schedule.router)
+
+api = APIRouter(prefix="/api")
+api.include_router(auth.router)
+api.include_router(attendance.router)
+api.include_router(member.router)
+api.include_router(schedule.router)
+api.include_router(constant.router)
+
+app.include_router(api)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3039"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+app.add_middleware(SessionMiddleware, secret_key="64b75f34602a43f95f9ebf93857309ab55aecb67bdb2245782746c7316e3477a")
 
 
 @app.on_event("startup")

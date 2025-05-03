@@ -1,0 +1,16 @@
+grade:
+  senior2:
+    generation: 47
+    display_name: 高2
+  senior1:
+    generation: 48
+    display_name: 高1
+  junior3:
+    generation: 49
+    display_name: 中3
+  junior2:
+    generation: 50
+    display_name: 中2
+  junior1:
+    generation: 51
+    display_name: 中1

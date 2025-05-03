@@ -17,7 +17,6 @@ class Attendance(BaseModel):
 
     @classmethod
     def create(cls, a: "models.Attendance") -> "Attendance":
-        print(a)
         return cls(
             id=a.id,
             date=a.date,

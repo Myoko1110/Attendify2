@@ -2,19 +2,31 @@ from enum import Enum
 
 
 class Part(Enum):
-    FLUTE = "flute"
-    CLARINET = "clarinet"
-    SAXOPHONE = "saxophone"
-    DOUBLE_REED = "doublereed"
-    TRUMPET = "trumpet"
-    HORN = "horn"
-    TROMBONE = "trombone"
+    FLUTE = "fl"
+    CLARINET = "cl"
+    SAXOPHONE = "sax"
+    DOUBLE_REED = "wr"
+    TRUMPET = "trp"
+    HORN = "hrn"
+    TROMBONE = "trb"
     BASS = "bass"
-    PERCUSSION = "percussion"
+    PERCUSSION = "perc"
+
+    UNKNOWN = "unk"
+
 
     @property
     def detail(self) -> "_Part":
         return PART_DETAIL[self]
+
+    def _missing_(self, value):
+        return self.UNKNOWN
+
+    def __repr__(self):
+        return f"<Part.{self.name}>"
+
+    def __str__(self):
+        return f"Part.{self.name}"
 
 
 class _Part:
@@ -34,4 +46,5 @@ PART_DETAIL = {
     Part.TROMBONE: _Part("トロンボーン", "Trombone", "Tb"),
     Part.BASS: _Part("バス", "Bass", "Bass"),
     Part.PERCUSSION: _Part("パーカッション", "Percussion", "Perc"),
+    Part.UNKNOWN: _Part("不明", "Unknown", "-"),
 }

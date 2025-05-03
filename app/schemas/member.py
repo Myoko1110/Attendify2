@@ -1,3 +1,4 @@
+import typing
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -13,8 +14,13 @@ class Member(BaseModel):
     generation: int
     name: str
     name_kana: str
-    email: str
-    role: Role | None
+    email: str | None
+    role: Role
+    lecture_day: list[str]
+
+
+    class Config:
+        from_attributes = True
 
     @classmethod
     def create(cls, m: "models.Member") -> "Member":
@@ -26,6 +32,7 @@ class Member(BaseModel):
             name_kana=m.name_kana,
             email=m.email,
             role=m.role,
+            lecture_day=m.lecture_day,
         )
 
 
@@ -34,8 +41,9 @@ class MemberParams(BaseModel):
     generation: int
     name: str
     name_kana: str
-    email: str
-    role: Role | None
+    email: typing.Optional[str] = None
+    role: Role
+    lecture_day: typing.Optional[list[str]] = None
 
 
 class MemberParamsOptional(BaseModel):
@@ -45,6 +53,7 @@ class MemberParamsOptional(BaseModel):
     name_kana: str | None = None
     email: str | None = None
     role: Role | None = None
+    lecture_day: list[str] | None = None
 
 
 class MemberOperationalResult(BaseModel):

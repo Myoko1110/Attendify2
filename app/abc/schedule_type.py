@@ -6,3 +6,4 @@ class ScheduleType(Enum):
     AFTERNOON = "afternoon"
     WEEKDAY = "weekday"
     ALLDAY = "allday"
+    OTHER = "other"

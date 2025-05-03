@@ -4,11 +4,12 @@ from fastapi import HTTPException
 
 
 class APIErrorCode(IntEnum):
-    ALREADY_EXISTS_ATTENDANCE = 100
+    INVALID_AUTHENTICATION_CREDENTIALS = 100
+    PERMISSION_DENIED = 101
+    AUTHENTICATION_FAILED = 102
 
-    PERMISSION_DENIED = 200
-    INVALID_GOOGLE_API_CODE = 201
-    INVALID_AUTHENTICATION_CREDENTIALS = 202
+    ALREADY_EXISTS_ATTENDANCE = 200
+    ALREADY_EXISTS_MEMBER_EMAIL = 201
 
     def of(self, detail: str, status_code: int = 400) -> "APIError":
         return APIError(self, detail, status_code)
