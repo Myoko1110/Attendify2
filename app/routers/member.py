@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Form
+from fastapi import APIRouter, Depends, Form, Query, Body
 from sqlalchemy.exc import IntegrityError
 
 from app.abc.api_error import APIErrorCode
@@ -34,7 +34,7 @@ async def get_self(session: Session = Depends(get_valid_session)) -> Member:
 )
 async def post_member(m: MemberParams = Form()) -> Member:
     try:
-        member = models.Member(part=m.part, generation=m.generation, name=m.name, name_kana=m.name_kana, email=m.email, role=m.role)
+        member = models.Member(part=m.part, generation=m.generation, name=m.name, name_kana=m.name_kana, email=m.email, role=m.role, lecture_day=m.lecture_day, is_competition_member=m.is_competition_member)
         return await db.add_member(member)
     except IntegrityError as e:
         raise APIErrorCode.ALREADY_EXISTS_MEMBER_EMAIL.of(f"Already exists member email: {e.code}")
@@ -46,7 +46,7 @@ async def post_member(m: MemberParams = Form()) -> Member:
     description="部員を登録します。",
 )
 async def post_members(members: list[MemberParams]) -> MembersOperationalResult:
-    member_list = [models.Member(part=m.part, generation=m.generation, name=m.name, name_kana=m.name_kana, email=m.email, role=m.role) for m in members]
+    member_list = [models.Member(part=m.part, generation=m.generation, name=m.name, name_kana=m.name_kana, email=m.email, role=m.role, lecture_day=m.lecture_day, is_competition_member=m.is_competition_member) for m in members]
     await db.add_members(member_list)
     return MembersOperationalResult(result=True)
 
@@ -68,4 +68,13 @@ async def delete_member(member_id: UUID) -> MembersOperationalResult:
 )
 async def patch_member(member_id: UUID, m: MemberParamsOptional) -> MembersOperationalResult:
     await db.update_member(member_id, m)
+    return MembersOperationalResult(result=True)
+
+
+@router.patch(
+    "/competition/{is_competition_member}",
+    summary="部員のコンクールメンバー情報を更新",
+)
+async def patch_competition_members(is_competition_member: bool, member_ids: list[UUID] = Body) -> MembersOperationalResult:
+    await db.update_members_competition(member_ids, is_competition_member)
     return MembersOperationalResult(result=True)

@@ -18,6 +18,7 @@ class PartSchema(BaseModel):
 class GradeSchema(BaseModel):
     generation: int
     display_name: str
+    type: str
 
 
 class GradesSchema(BaseModel):

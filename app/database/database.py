@@ -173,7 +173,16 @@ class AttendifyDatabase:
                     stmt = stmt.values(role=m.role)
                 if m.lecture_day is not None:
                     stmt = stmt.values(lecture_day=m.lecture_day)
+                if m.is_competition_member is not None:
+                    stmt = stmt.values(is_competition_member=m.is_competition_member)
 
+                await db.execute(stmt)
+                await db.commit()
+
+    async def update_members_competition(self, member_ids: list[UUID], is_competition_member: bool):
+        async with self._commit_lock:
+            async with self.session() as db:
+                stmt = update(Member).where(Member.id.in_(member_ids)).values(is_competition_member=is_competition_member)
                 await db.execute(stmt)
                 await db.commit()
 

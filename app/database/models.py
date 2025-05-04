@@ -2,7 +2,7 @@ import datetime
 from enum import Enum
 from uuid import uuid4
 
-from sqlalchemy import Column, Date, ForeignKey, Integer, String, TypeDecorator, \
+from sqlalchemy import Boolean, Column, Date, ForeignKey, Integer, String, TypeDecorator, \
     UniqueConstraint, Uuid, JSON
 from sqlalchemy.orm import declarative_base, relationship
 
@@ -65,6 +65,7 @@ class Member(Base):
     email = Column(String(64), unique=True, nullable=True)
     role = Column(EnumType(enum_class=Role), nullable=True)
     lecture_day = Column(JSON, nullable=False, default=[])
+    is_competition_member = Column(Boolean, nullable=False, default=False)
 
 
 class Attendance(Base):
