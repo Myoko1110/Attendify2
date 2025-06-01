@@ -12,6 +12,8 @@ class Part(Enum):
     BASS = "bass"
     PERCUSSION = "perc"
 
+    ADVISOR = "advisor"
+
     UNKNOWN = "unk"
 
 
@@ -46,5 +48,6 @@ PART_DETAIL = {
     Part.TROMBONE: _Part("トロンボーン", "Trombone", "Tb"),
     Part.BASS: _Part("バス", "Bass", "Bass"),
     Part.PERCUSSION: _Part("パーカッション", "Percussion", "Perc"),
+    Part.ADVISOR: _Part("顧問", "Advisor", "Adv"),
     Part.UNKNOWN: _Part("不明", "Unknown", "-"),
 }

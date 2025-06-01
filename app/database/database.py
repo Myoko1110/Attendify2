@@ -100,6 +100,25 @@ class AttendifyDatabase:
                 )
                 await db.commit()
 
+    # async def get_attendance_rates(self) -> list[AttendanceRate]:
+    #     async with self.session() as db:
+    #         stmt = select(AttendanceRate)
+    #
+    #         result = await db.execute(stmt)
+    #         return [r[0] for r in result.all()]
+    #
+    # async def clear_attendance_rates(self):
+    #     async with self._commit_lock:
+    #         async with self.session() as db:
+    #             await db.execute(delete(AttendanceRate))
+    #             await db.commit()
+    #
+    # async def add_attendance_rates(self, attendance_rates: list[AttendanceRate]):
+    #     async with self._commit_lock:
+    #         async with self.session() as db:
+    #             db.add_all(attendance_rates)
+    #             await db.commit()
+
     async def get_members(self, *, part: Part = None, generation: int = None) -> list[Member]:
         async with self.session() as db:
             stmt = select(Member)
@@ -194,10 +213,11 @@ class AttendifyDatabase:
     async def add_schedule(self, schedule: Schedule):
         async with self._commit_lock:
             async with self.session() as db:
-                stmt = insert(Schedule).values(date=schedule.date, type=schedule.type).on_conflict_do_update(
+                stmt = insert(Schedule).values(date=schedule.date, type=schedule.type, target=schedule.target).on_conflict_do_update(
                     index_elements=["date"],
                     set_={
                         "type": schedule.type,
+                        "target": schedule.target,
                     },
                 )
                 await db.execute(stmt)
@@ -227,3 +247,4 @@ class AttendifyDatabase:
             async with self.session() as db:
                 await db.execute(delete(Session).where(Session.token == token))
                 await db.commit()
+

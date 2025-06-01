@@ -7,6 +7,7 @@ from app.abc.part import Part
 from app.abc.role import Role
 from app.dependencies import get_valid_session
 from app.schemas.constant import GradesSchema, PartSchema
+from app.utils import load_setting_data, settings
 
 router = APIRouter(prefix="/constant", tags=["Constant"], dependencies=[Depends(get_valid_session)])
 
@@ -29,10 +30,7 @@ async def get_role() -> dict[Role, str]:
     return {r: r.display_name for r in Role}
 
 
-def load_setting_data():
-    yaml_path = Path("settings.yml")
-    with yaml_path.open(encoding="utf-8") as f:
-        return yaml.safe_load(f)
+
 
 
 @router.get(
@@ -41,4 +39,4 @@ def load_setting_data():
     description="学年の情報を取得します。",
 )
 async def get_grade() -> GradesSchema:
-    return load_setting_data().get("grade", {})
+    return settings.get("grade", {})

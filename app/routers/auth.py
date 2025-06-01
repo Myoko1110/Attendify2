@@ -6,15 +6,14 @@ from app.abc.api_error import APIErrorCode
 from app.database import db
 from app.dependencies import get_valid_session
 from app.schemas import Member
+from app.utils import settings
 
 router = APIRouter(tags=["Authentication"])
-
-REDIRECT_URI = "http://localhost:3039/login"
 
 flow = Flow.from_client_secrets_file(
     "client_secret.json",
     scopes=["openid", "https://www.googleapis.com/auth/userinfo.email"],
-    redirect_uri=REDIRECT_URI
+    redirect_uri=settings["REDIRECT_URI"]
 )
 
 
@@ -34,7 +33,6 @@ async def login(request: Request, code: str = Form(), state: str = Form()) -> Me
         email = session.get("https://www.googleapis.com/userinfo/v2/me").json()
 
     except Exception as e:
-        print(e)
         raise APIErrorCode.INVALID_AUTHENTICATION_CREDENTIALS.of("Authentication failed", 400)
 
     member = await db.get_member_by_email(email["email"])

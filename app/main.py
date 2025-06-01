@@ -25,7 +25,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.add_middleware(SessionMiddleware, secret_key="64b75f34602a43f95f9ebf93857309ab55aecb67bdb2245782746c7316e3477a")
+app.add_middleware(
+    SessionMiddleware,
+    secret_key="64b75f34602a43f95f9ebf93857309ab55aecb67bdb2245782746c7316e3477a",
+    https_only=True,
+    same_site="strict"
+)
 
 
 @app.on_event("startup")

@@ -6,7 +6,6 @@ class Role(Enum):
     PART_LEADER = "part"
     ATTENDANCE_OFFICER = "officer"
     MEMBER = "member"
-    ADVISER = "adviser"
 
     UNKNOWN = "unk"
 
@@ -24,6 +23,5 @@ ROLE_DISPLAY_NAME = {
     Role.PART_LEADER: "パートリーダー",
     Role.ATTENDANCE_OFFICER: "出席係",
     Role.MEMBER: "部員",
-    Role.ADVISER: "顧問",
     Role.UNKNOWN: "不明",
 }

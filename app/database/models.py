@@ -2,8 +2,8 @@ import datetime
 from enum import Enum
 from uuid import uuid4
 
-from sqlalchemy import Boolean, Column, Date, ForeignKey, Integer, String, TypeDecorator, \
-    UniqueConstraint, Uuid, JSON
+from sqlalchemy import Boolean, Column, Date, ForeignKey, Integer, JSON, String, \
+    TypeDecorator, UniqueConstraint, Uuid
 from sqlalchemy.orm import declarative_base, relationship
 
 from app import utils
@@ -38,7 +38,6 @@ class AwareDateTime(TypeDecorator):
     impl = String
 
     def process_bind_param(self, value: datetime.datetime, dialect):
-        print(value)
         if value is not None:
             if value.tzinfo is None:
                 raise ValueError("Timezone-aware datetime required.")
@@ -85,11 +84,30 @@ class Attendance(Base):
     member = relationship("Member")
 
 
+# class AttendanceRate(Base):
+#     __tablename__ = "attendance_rates"
+#     __table_args__ = (
+#         UniqueConstraint('target_id', 'period_value', 'actual'),
+#     )
+#     id = Column(Uuid, nullable=False, primary_key=True, default=uuid4)
+#
+#     target_type = Column(String(16), nullable=False)  # 'member' | 'part' | 'all'
+#     target_id = Column(String(64), nullable=True)  # member_id | part_name | None
+#
+#     period_type = Column(String(8), nullable=False)  # 'day' | 'month' | 'all'
+#     period_value = Column(String(10), nullable=True)  # '2025-05' | '2025-05-12' | None
+#
+#     rate = Column(Double, nullable=True, default=None)
+#     actual = Column(Boolean, nullable=False, default=False)
+#     updated_at = Column(AwareDateTime, nullable=False, default=utils.now, onupdate=utils.now)
+
+
 class Schedule(Base):
     __tablename__ = "schedules"
 
     date = Column(Date, nullable=False, primary_key=True)
     type = Column(EnumType(enum_class=ScheduleType), nullable=False)
+    target = Column(JSON, nullable=True)  # ["junior1", "senior2", "competition"]
 
 
 class Session(Base):
