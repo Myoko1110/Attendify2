@@ -2,7 +2,7 @@ from pathlib import Path
 
 from sqlalchemy import URL, create_engine
 
-from app.database import Base
+from . import Base
 
 DB_URL = URL.create(
     drivername="mysql+pymysql",
