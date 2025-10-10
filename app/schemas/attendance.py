@@ -3,9 +3,6 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from app.database import models
-from app.schemas.member import Member
-
 
 class Attendance(BaseModel):
     id: UUID
@@ -13,18 +10,10 @@ class Attendance(BaseModel):
     attendance: str
     created_at: datetime.datetime
     updated_at: datetime.datetime
-    member: Member
+    member_id: UUID
 
-    @classmethod
-    def create(cls, a: "models.Attendance") -> "Attendance":
-        return cls(
-            id=a.id,
-            date=a.date,
-            attendance=a.attendance,
-            created_at=a.created_at,
-            updated_at=a.updated_at,
-            member=Member.create(a.member) if a.member else None,
-        )
+    class Config:
+        from_attributes = True
 
 
 class AttendanceOperationalResult(BaseModel):
@@ -40,3 +29,24 @@ class AttendancesParams(BaseModel):
     member_id: UUID
     attendance: str
     date: datetime.date
+
+
+class AttendanceRate(BaseModel):
+    id: UUID
+    target_type: str  # 'member' | 'part' | 'all'
+    target_id: str | None  # member_id | part_name | None
+    month: str
+    rate: float | None
+    actual: bool
+    updated_at: datetime.datetime
+
+    class Config:
+        from_attributes = True
+
+
+class AttendanceRateParams(BaseModel):
+    target_type: str  # 'member' | 'part' | 'all'
+    target_id: str | None  # member_id | part_name | None
+    month: str
+    rate: float | None
+    actual: bool

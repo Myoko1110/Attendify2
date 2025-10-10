@@ -11,13 +11,8 @@ class Schedule(BaseModel):
     type: ScheduleType
     target: list[str] | None = None
 
-    @classmethod
-    def create(cls, schedule: "models.Schedule") -> "Schedule":
-        return cls(
-            date=schedule.date,
-            type=schedule.type,
-            target=schedule.target,
-        )
+    class Config:
+        from_attributes = True
 
 
 class ScheduleOperationalResult(BaseModel):

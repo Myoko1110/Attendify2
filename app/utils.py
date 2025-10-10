@@ -5,6 +5,7 @@ from pathlib import Path
 import yaml
 
 from app import schemas
+from app.schemas import Member
 
 
 def now() -> datetime.datetime:
@@ -49,6 +50,7 @@ class Attendances(list[schemas.Attendance]):
 
         total = 0
         score = 0
+
         for attendance in self:
             if attendance.attendance in scores:
                 s = scores[attendance.attendance]
@@ -66,6 +68,17 @@ class Attendances(list[schemas.Attendance]):
             (Decimal(str(score)) / Decimal(str(total)))
             .quantize(Decimal("0.1"), rounding="ROUND_HALF_UP")
         )
+
+    def filter_by_part(self, part: schemas.Part) -> "Attendances":
+        return Attendances(*[a for a in self if a.member and a.member.part == part])
+
+    def filter_by_member(self, member: Member) -> "Attendances":
+        return Attendances(*[a for a in self if a.member and a.member.id == member.id])
+
+    def filter_by_date(self, date: datetime.date) -> "Attendances":
+        return Attendances(*[a for a in self if a.date == date])
+
+
 
 attendance_score = {
   '出席': 100,

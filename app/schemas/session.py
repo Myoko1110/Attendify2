@@ -12,11 +12,5 @@ class Session(BaseModel):
     created_at: datetime.datetime
     member: Member
 
-    @classmethod
-    def create(cls, session: "models.Session") -> "Session":
-        return cls(
-            token=session.token,
-            member_id=session.member_id,
-            created_at=session.created_at,
-            member=Member.create(session.member),
-        )
+    class Config:
+        from_attributes = True

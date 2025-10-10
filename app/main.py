@@ -1,11 +1,16 @@
-from fastapi import APIRouter, FastAPI, HTTPException
+import datetime
+
+from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.middleware.sessions import SessionMiddleware
-from starlette.responses import JSONResponse
+from starlette.responses import FileResponse, JSONResponse
 
 from .abc.api_error import APIError
-from .database import db
+from .database import get_db
+from .dependencies import get_valid_session
 from .routers import attendance, auth, constant, member, schedule
+from .utils import settings
 
 app = FastAPI()
 
@@ -20,7 +25,7 @@ app.include_router(api)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3039"],
+    allow_origins=settings.get("ORIGINS"),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -33,9 +38,17 @@ app.add_middleware(
 )
 
 
-@app.on_event("startup")
-async def on_startup():
-    await db.connect()
+@app.get(
+    "/db",
+    summary="データベースをダウンロード",
+    dependencies=[Depends(get_valid_session)],
+)
+async def get_db():
+    now = datetime.datetime.now()
+    return FileResponse(
+        path="attendify.db",
+        filename=f"attendify_{now.strftime('%Y%m%d%H%M%S')}.db",
+    )
 
 
 @app.exception_handler(HTTPException)

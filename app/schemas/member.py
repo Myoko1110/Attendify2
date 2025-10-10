@@ -5,7 +5,6 @@ from pydantic import BaseModel, Field
 
 from app.abc.part import Part
 from app.abc.role import Role
-from app.database import models
 
 
 class Member(BaseModel):
@@ -21,20 +20,6 @@ class Member(BaseModel):
 
     class Config:
         from_attributes = True
-
-    @classmethod
-    def create(cls, m: "models.Member") -> "Member":
-        return cls(
-            id=m.id,
-            part=m.part,
-            generation=m.generation,
-            name=m.name,
-            name_kana=m.name_kana,
-            email=m.email,
-            role=m.role,
-            lecture_day=m.lecture_day,
-            is_competition_member=m.is_competition_member,
-        )
 
 
 class MemberParams(BaseModel):

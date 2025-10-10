@@ -1,4 +1,5 @@
 REDIRECT_URI: http://localhost:3039/login
+ORIGINS: ["http://localhost:3039"]
 
 grade:
   senior2:
