@@ -48,6 +48,8 @@ async def login(request: Request, code: str = Form(), state: str = Form(), db: A
     request.session["token"] = token
     request.session.pop("state")
 
+    await db.refresh(member)
+
     return member
 
 
