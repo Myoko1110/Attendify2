@@ -1,15 +1,13 @@
 import datetime
+from uuid import UUID
 
 from pydantic import BaseModel
 
-from app.schemas import Member
 
-
-class Session(BaseModel):
-    token: str
-    member_id: int
+class Group(BaseModel):
+    id: UUID
+    display_name: str
     created_at: datetime.datetime
-    member: Member
 
     class Config:
         from_attributes = True

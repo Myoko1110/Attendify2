@@ -2,14 +2,12 @@ import datetime
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import FileResponse, JSONResponse
 
 from .abc.api_error import APIError
-from .database import get_db
 from .dependencies import get_valid_session
-from .routers import attendance, auth, constant, member, schedule
+from .routers import attendance, auth, constant, group, member, membership_status, schedule
 from .utils import settings
 
 app = FastAPI()
@@ -18,6 +16,8 @@ api = APIRouter(prefix="/api")
 api.include_router(auth.router)
 api.include_router(attendance.router)
 api.include_router(member.router)
+api.include_router(membership_status.router)
+api.include_router(group.router)
 api.include_router(schedule.router)
 api.include_router(constant.router)
 
@@ -73,3 +73,10 @@ def on_internal_exception_handler(_, __: Exception):
         error="Page Not Found",
         error_code=-1,
     ))
+
+
+@app.on_event("startup")
+async def on_startup():
+    from .database import migrate
+    await migrate()
+    print("Database migrated.")
