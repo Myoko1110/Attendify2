@@ -1,7 +1,7 @@
 import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Form
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, Query
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,9 +24,7 @@ router = APIRouter(prefix="/attendance", tags=["Attendance"],
 )
 async def get_attendances(part: Part = None, generation: int = None, date: datetime.date = None,
                           month: str = None, db: AsyncSession = Depends(get_db)):
-    return [a for a in
-            await cruds.get_attendances(db, part=part, generation=generation, date=date,
-                                        month=month)]
+    return await cruds.get_attendances(db, part=part, generation=generation, date=date, month=month)
 
 
 @router.post(
@@ -39,10 +37,11 @@ async def post_attendance(
     a: schemas.AttendancesParams = Form(),
     db: AsyncSession = Depends(get_db),
     background_tasks: BackgroundTasks = BackgroundTasks(),
+    overwrite: bool = Query(False, description="重複があった場合に上書きする")
 ):
     attendance_params = models.Attendance(**a.model_dump())
     try:
-        attendance = await cruds.add_attendance(db, attendance_params)
+        attendance = await cruds.add_attendance(db, attendance_params, overwrite=overwrite)
 
         # 出欠率の再計算処理をバックグラウンドタスクに移動
         updated_month = attendance.date.strftime("%Y-%m")
@@ -96,15 +95,82 @@ async def recalculate_attendance_rates(updated_month: str, attendance: models.At
 )
 async def post_attendances(
         attendances: list[schemas.AttendancesParams],
-        db: AsyncSession = Depends(get_db)) -> schemas.AttendancesOperationalResult:
+        db: AsyncSession = Depends(get_db),
+        background_tasks: BackgroundTasks = BackgroundTasks(),
+        overwrite: bool = Query(False, description="重複があった場合に上書きする")) -> schemas.AttendancesOperationalResult:
     attendance_list = [models.Attendance(**a.model_dump()) for a in attendances]
 
+    if not attendance_list:
+        return schemas.AttendancesOperationalResult(result=True)
+
     try:
-        await cruds.add_attendances(db, attendance_list)
-    except IntegrityError:
+        inserted = await cruds.add_attendances(db, attendance_list, overwrite=overwrite)
+    except IntegrityError as e:
         raise APIErrorCode.ALREADY_EXISTS_ATTENDANCE.of("Already exists attendance")
 
+    # バルク登録された出欠の月ごとに出席率再計算をバックグラウンドで行う
+    try:
+        months = sorted({a.date.strftime("%Y-%m") for a in inserted if a is not None})
+        for m in months:
+            background_tasks.add_task(recalculate_attendance_rates_bulk, m)
+    except Exception:
+        # バックグラウンドタスクの登録に失敗しても主処理は成功させる
+        pass
+
     return schemas.AttendancesOperationalResult(result=True)
+
+
+async def recalculate_attendance_rates_bulk(updated_month: str):
+    """バルク登録または複数レコード変更時に、指定した月について出席率を再計算して DB に保存する。
+
+    単一登録用の recalculate_attendance_rates と異なり、該当月の全出欠（member=True）を取得して
+    全体・パート・各部員ごとの出席率を計算する。
+    """
+    async with async_session() as db:
+        # メンバーをロードした上で当月の出欠を取得
+        attendances = await cruds.get_attendances(db, member=True)
+        schedules = await cruds.get_schedules(db)
+        months = sorted(set(schedule.date.strftime("%Y-%m") for schedule in schedules))
+        dates = sorted(set(schedule.date for schedule in schedules))
+
+        if updated_month not in months:
+            # その月にスケジュールが無ければ計算対象外
+            return
+
+        all_attendances = Attendances(
+            *[a for a in attendances if a.date.strftime("%Y-%m") == updated_month and a.member is not None and a.date in dates]
+        )
+
+        attendance_rates: list[models.AttendanceRate] = []
+
+        # 全体
+        attendance_rates.append(
+            models.AttendanceRate(target_type="all", month=updated_month, rate=all_attendances.calc(False), actual=False))
+        attendance_rates.append(
+            models.AttendanceRate(target_type="all", month=updated_month, rate=all_attendances.calc(True), actual=True))
+
+        # パートごと
+        for part in Part:
+            part_attendances = all_attendances.filter_by_part(part)
+            attendance_rates.append(
+                models.AttendanceRate(target_type="part", target_id=part.value, month=updated_month,
+                                      rate=part_attendances.calc(False), actual=False))
+            attendance_rates.append(
+                models.AttendanceRate(target_type="part", target_id=part.value, month=updated_month,
+                                      rate=part_attendances.calc(True), actual=True))
+
+        # 部員ごと
+        for member in set(a.member for a in all_attendances if a.member is not None):
+            member_attendances = all_attendances.filter_by_member(member)
+            attendance_rates.append(
+                models.AttendanceRate(target_type="member", target_id=str(member.id), month=updated_month,
+                                      rate=member_attendances.calc(False), actual=False))
+            attendance_rates.append(
+                models.AttendanceRate(target_type="member", target_id=str(member.id), month=updated_month,
+                                      rate=member_attendances.calc(True), actual=True))
+
+        await cruds.add_attendance_rates(db, attendance_rates)
+        await db.commit()
 
 
 @router.delete(
@@ -185,5 +251,30 @@ async def recalc_attendance(
     await cruds.clear_attendance_rates(db)
     await cruds.add_attendance_rates(db, attendance_rates)
     await db.commit()
+
+    return schemas.AttendancesOperationalResult(result=True)
+
+
+@router.delete(
+    "s",
+    summary="出欠情報を一括削除",
+    description="複数の出欠情報を一括で削除します。attendance_ids は削除する出欠の UUID の配列です。",
+)
+async def bulk_delete_attendances(attendance_ids: list[UUID], db: AsyncSession = Depends(
+    get_db), background_tasks: BackgroundTasks = BackgroundTasks()) -> schemas.AttendancesOperationalResult:
+    """attendance_ids に含まれる出欠を一括削除し、該当する月ごとに出席率を再計算するためのバックグラウンドタスクを登録します。
+
+    DB 削除は cruds.remove_attendances で一回の DELETE クエリにまとめて行います。
+    """
+    if not attendance_ids:
+        return schemas.AttendancesOperationalResult(result=True)
+
+    # 削除を一度の DB 操作で行い、削除した行の id と date を cruds.remove_attendances から受け取る
+    rows = await cruds.remove_attendances(db, attendance_ids)
+
+    # rows は list[Row(id, date)] なので、それを月に変換して再計算タスクを登録する
+    months = sorted({row[1].strftime("%Y-%m") for row in rows if row[1] is not None})
+    for m in months:
+        background_tasks.add_task(recalculate_attendance_rates_bulk, m)
 
     return schemas.AttendancesOperationalResult(result=True)

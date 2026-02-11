@@ -5,3 +5,4 @@ from .schedule import *
 from .schedule import Schedule
 from .session import *
 from .group import *
+from .pre_attendance import *

@@ -28,7 +28,6 @@ class Member(BaseModel):
     role: Role
     lecture_day: list[str]
     is_competition_member: bool
-    is_temporarily_retired: bool
 
     class Config:
         from_attributes = True

@@ -1,9 +1,12 @@
 import datetime
 from enum import Enum
 from uuid import uuid4
+from typing import Optional
 
-from sqlalchemy import Boolean, Column, Date, Double, ForeignKey, Integer, JSON, String, \
+import nanoid
+from sqlalchemy import Boolean, Column, Date, DateTime, Double, ForeignKey, Integer, JSON, String, \
     TypeDecorator, UniqueConstraint, Uuid
+from sqlalchemy.dialects.postgresql import DATERANGE
 from sqlalchemy.orm import declarative_base, relationship
 
 from app import utils
@@ -12,6 +15,10 @@ from app.abc.role import Role
 from app.abc.schedule_type import ScheduleType
 
 Base = declarative_base()
+
+
+def generate_nanoid():
+    return nanoid.generate(size=10, alphabet="0123456789abcdefghijklmnopqrstuvwxyz")
 
 
 class EnumType(TypeDecorator):
@@ -27,34 +34,16 @@ class EnumType(TypeDecorator):
                 raise TypeError("Value should %s type" % self.enum_class)
             return value.value
 
-    def process_result_value(self, value, dialect) -> Enum:
+    def process_result_value(self, value, dialect) -> Optional[Enum]:
         if value is not None:
             if not isinstance(value, str):
                 raise TypeError("Value should have str type")
             return self.enum_class(value)
-
-
-class AwareDateTime(TypeDecorator):
-    impl = String
-
-    def process_bind_param(self, value: datetime.datetime, dialect):
-        if value is not None:
-            if value.tzinfo is None:
-                raise ValueError("Timezone-aware datetime required.")
-            return value.isoformat(timespec="seconds")
-        return None
-
-    def process_result_value(self, value, dialect):
-        if value is not None:
-            return datetime.datetime.fromisoformat(value).astimezone(datetime.timezone.utc)
         return None
 
 
 class Member(Base):
     __tablename__ = "members"
-    __table_args__ = {
-        "sqlite_autoincrement": True,
-    }
 
     id = Column(Uuid, primary_key=True, default=uuid4)
 
@@ -67,11 +56,10 @@ class Member(Base):
 
     lecture_day = Column(JSON, nullable=False, default=[])
     is_competition_member = Column(Boolean, nullable=False, default=False)
-    is_temporarily_retired = Column(Boolean, nullable=False, default=False)
 
     groups = relationship("Group", secondary="member_groups", back_populates="members")
-    weekly_participations = relationship("WeeklyParticipation", back_populates="member")
-    membership_status_periods = relationship("MembershipStatusPeriod", back_populates="member")
+    weekly_participations = relationship("WeeklyParticipation", back_populates="member", cascade="all, delete-orphan", passive_deletes=True)
+    membership_status_periods = relationship("MembershipStatusPeriod", back_populates="member", cascade="all, delete-orphan", passive_deletes=True)
 
 
 class WeeklyParticipation(Base):
@@ -82,7 +70,7 @@ class WeeklyParticipation(Base):
 
     id = Column(Uuid, primary_key=True, default=uuid4)
 
-    member_id = Column(Uuid, ForeignKey("members.id"), nullable=False)
+    member_id = Column(Uuid, ForeignKey("members.id", ondelete="CASCADE"), nullable=False)
     weekday = Column(Integer, nullable=False)  # 0=Mon ... 6=Sun
 
     default_attendance = Column(String(64), nullable=True)  # 出席入力画面の出席状態
@@ -101,7 +89,9 @@ class MembershipStatus(Base):
     is_attendance_target = Column(Boolean, nullable=False)  # 出席入力画面に表示するかどうか
     default_attendance = Column(String(32), nullable=False)  # 出席入力画面の出席状態
 
-    created_at = Column(AwareDateTime, default=utils.now)
+    created_at = Column(DateTime(timezone=True), default=utils.now)
+
+    status_periods = relationship("MembershipStatusPeriod", back_populates="status", cascade="all, delete-orphan", passive_deletes=True)
 
 
 # 部員の状態期間
@@ -110,13 +100,13 @@ class MembershipStatusPeriod(Base):
 
     id = Column(Uuid, primary_key=True, default=uuid4)
 
-    member_id = Column(Uuid, ForeignKey("members.id"), nullable=False)
-    status_id = Column(Uuid, ForeignKey("membership_statuses.id"), nullable=False)
+    member_id = Column(Uuid, ForeignKey("members.id", ondelete="CASCADE"), nullable=False)
+    status_id = Column(Uuid, ForeignKey("membership_statuses.id", ondelete="CASCADE"), nullable=False)
 
     start_date = Column(Date, nullable=False)
     end_date = Column(Date, nullable=True)
 
-    created_at = Column(AwareDateTime, default=utils.now)
+    created_at = Column(DateTime(timezone=True), default=utils.now)
 
     status = relationship("MembershipStatus", lazy="selectin")
     member = relationship("Member", back_populates="membership_status_periods")
@@ -125,13 +115,10 @@ class MembershipStatusPeriod(Base):
 # グループ
 class Group(Base):
     __tablename__ = "groups"
-    __table_args__ = {
-        "sqlite_autoincrement": True,
-    }
 
     id = Column(Uuid, primary_key=True, default=uuid4)
     display_name = Column(String(64), unique=True, nullable=False)
-    created_at = Column(AwareDateTime, nullable=False, default=utils.now)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utils.now)
 
     members = relationship("Member", secondary="member_groups", back_populates="groups")
 
@@ -140,11 +127,10 @@ class MemberGroup(Base):
     __tablename__ = "member_groups"
     __table_args__ = (
         UniqueConstraint("member_id", "group_id"),
-        {"sqlite_autoincrement": True},
     )
 
-    member_id = Column(Uuid, ForeignKey("members.id"), primary_key=True)
-    group_id = Column(Uuid, ForeignKey("groups.id"), primary_key=True)
+    member_id = Column(Uuid, ForeignKey("members.id", ondelete="CASCADE"), primary_key=True)
+    group_id = Column(Uuid, ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True)
 
     member = relationship("Member", overlaps="groups,members")
     group = relationship("Group", overlaps="groups,members")
@@ -154,15 +140,14 @@ class Attendance(Base):
     __tablename__ = "attendances"
     __table_args__ = (
         UniqueConstraint("date", "member_id"),
-        {"sqlite_autoincrement": True},
     )
 
     id = Column(Uuid, nullable=False, primary_key=True, default=uuid4)
-    date = Column(Date, nullable=False)
-    member_id = Column(Uuid, ForeignKey("members.id"), nullable=False)
+    date = Column(Date, nullable=False, index=True)
+    member_id = Column(Uuid, ForeignKey("members.id", ondelete="SET NULL"), nullable=True)
     attendance = Column(String(64), nullable=False)
-    created_at = Column(AwareDateTime, nullable=False, default=utils.now)
-    updated_at = Column(AwareDateTime, nullable=False, onupdate=utils.now, default=utils.now)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utils.now)
+    updated_at = Column(DateTime(timezone=True), nullable=False, onupdate=utils.now, default=utils.now)
 
     member = relationship("Member", lazy="selectin")
 
@@ -181,7 +166,7 @@ class AttendanceRate(Base):
 
     rate = Column(Double, nullable=True, default=None)
     actual = Column(Boolean, nullable=False, default=False)
-    updated_at = Column(AwareDateTime, nullable=False, default=utils.now, onupdate=utils.now)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=utils.now, onupdate=utils.now)
 
 
 class Schedule(Base):
@@ -194,23 +179,38 @@ class Schedule(Base):
     exclude_groups = Column(JSON, nullable=True)
 
 
-class ScheduleGroupRule(Base):
-    __tablename__ = "schedule_group_rules"
+class PreAttendance(Base):
+    __tablename__ = "pre_attendances"
+    __table_args__ = (
+        UniqueConstraint("date", "member_id"),
+    )
 
-    id = Column(Uuid, primary_key=True, default=uuid4)
+    id = Column(Uuid, nullable=False, primary_key=True, default=uuid4)
+    date = Column(Date, nullable=False, index=True)
+    member_id = Column(Uuid, ForeignKey("members.id", ondelete="SET NULL"), nullable=True)
+    attendance = Column(String(64), nullable=False)
+    reason = Column(String(256), nullable=True)
+    pre_check_id = Column(String(10), ForeignKey("pre_checks.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utils.now)
+    updated_at = Column(DateTime(timezone=True), nullable=False, onupdate=utils.now, default=utils.now)
 
-    date = Column(Date, ForeignKey("schedules.date"), nullable=False)
-    group_id = Column(Uuid, ForeignKey("groups.id"), nullable=False)
 
-    rule = Column(String(16), nullable=False)
-    # "only" | "exclude"
+class PreCheck(Base):
+    __tablename__ = "pre_checks"
+
+    id = Column(String(10), nullable=False, primary_key=True, default=generate_nanoid)
+    start_date = Column(Date, nullable=False)
+    end_date = Column(Date, nullable=False)
+    description = Column(String(256), default="", nullable=False)
+    edit_deadline_days = Column(Integer, nullable=False, default=0)
 
 
 class Session(Base):
     __tablename__ = "sessions"
 
-    token = Column(String(256), primary_key=True)
-    member_id = Column(Uuid, ForeignKey("members.id"), nullable=False)
-    created_at = Column(AwareDateTime, nullable=False, default=utils.now)
+    token = Column(String(512), primary_key=True)
+    member_id = Column(Uuid, ForeignKey("members.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utils.now)
 
     member = relationship("Member")
+

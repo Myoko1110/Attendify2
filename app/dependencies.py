@@ -8,7 +8,6 @@ from app.database.models import Session
 
 
 async def get_valid_session(request: Request, db: AsyncSession = Depends(get_db)) -> Session | None:
-
     token = request.session.get("token")
     if token:
         session = await cruds.get_session_by_valid_token(db, token)

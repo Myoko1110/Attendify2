@@ -1,10 +1,11 @@
+import calendar
 import datetime
 import secrets
 from typing import Sequence
 from uuid import UUID
 
-from sqlalchemy import delete, func, select, update
-from sqlalchemy.dialects.sqlite import insert
+from sqlalchemy import between, delete, select, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import noload, selectinload
 
@@ -12,7 +13,7 @@ from app import utils
 from app.abc.part import Part
 from app.database.models import Attendance, AttendanceRate, Group, Member, MemberGroup, \
     MembershipStatus, \
-    MembershipStatusPeriod, Schedule, Session, WeeklyParticipation
+    MembershipStatusPeriod, PreAttendance, PreCheck, Schedule, Session, WeeklyParticipation
 from app.schemas import MemberParamsOptional, MembershipStatusPeriodParams, \
     WeeklyParticipationParams
 
@@ -39,31 +40,127 @@ async def get_attendances(db: AsyncSession, *, part: Part = None, generation: in
         stmt = stmt.where(Member.generation == generation)
 
     if month is not None:
-        stmt = stmt.where(func.strftime("%Y-%m", Attendance.date) == month)
+        start = datetime.date.fromisoformat(f"{month}-01")
+        last_day = calendar.monthrange(start.year, start.month)[1]
+        end = datetime.date(start.year, start.month, last_day)
+        stmt = stmt.where(between(Attendance.date, start, end))
 
     result = await db.execute(stmt)
     return [r for r in result.scalars().all()]
 
 
-async def add_attendance(db: AsyncSession, attendance: Attendance) -> Attendance:
-    db.add(attendance)
+async def add_attendance(db: AsyncSession, attendance: Attendance,
+                         overwrite: bool = False) -> Attendance:
+    # 既存動作 (overwrite=False)
+    if not overwrite:
+        db.add(attendance)
+        await db.commit()
+        await db.refresh(attendance, ["member"])
+        return attendance
+
+    # overwrite=True の場合は upsert を行う
+    stmt = insert(Attendance).values(
+        date=attendance.date,
+        member_id=attendance.member_id,
+        attendance=attendance.attendance,
+        created_at=utils.now(),
+        updated_at=utils.now(),
+    )
+
+    # 重複キー (date, member_id) があれば attendance と updated_at を上書きする
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["date", "member_id"],
+        set_=dict(
+            attendance=stmt.excluded.attendance,
+            updated_at=utils.now(),
+        )
+    )
+
+    await db.execute(stmt)
     await db.commit()
-    await db.refresh(attendance, ["member"])
-    return attendance
+
+    # upsert 後の行を取得して member をロードして返す
+    q = select(Attendance).where(
+        Attendance.date == attendance.date,
+        Attendance.member_id == attendance.member_id,
+    ).options(selectinload(Attendance.member))
+    res = await db.execute(q)
+    return res.scalar_one()
 
 
-async def add_attendances(db: AsyncSession, attendances: list[Attendance]):
-    db.add_all(attendances)
+async def add_attendances(db: AsyncSession, attendances: list[Attendance], overwrite: bool = False):
+    # 既存動作 (overwrite=False)
+    if not overwrite:
+        db.add_all(attendances)
+        await db.commit()
+        # refresh each instance so that DB-generated fields (id 等) が反映される
+        for a in attendances:
+            await db.refresh(a)
+        return attendances
+
+    # overwrite=True の場合はバルク upsert を行う
+    if not attendances:
+        return []
+
+    values = [
+        dict(
+            date=a.date,
+            member_id=a.member_id,
+            attendance=a.attendance,
+            created_at=utils.now(),
+            updated_at=utils.now(),
+        )
+        for a in attendances
+    ]
+
+    stmt = insert(Attendance).values(values)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["date", "member_id"],
+        set_=dict(
+            attendance=stmt.excluded.attendance,
+            updated_at=utils.now(),
+        )
+    )
+
+    await db.execute(stmt)
     await db.commit()
-    # refresh each instance so that DB-generated fields (id 等) が反映される
+
+    # upsert の結果を各レコードごとに取得して返す（member を含めて取得）
+    inserted: list[Attendance] = []
     for a in attendances:
-        await db.refresh(a)
-    return attendances
+        q = select(Attendance).where(
+            Attendance.date == a.date,
+            Attendance.member_id == a.member_id,
+        ).options(selectinload(Attendance.member))
+        res = await db.execute(q)
+        ar = res.scalar_one_or_none()
+        if ar is not None:
+            inserted.append(ar)
+    return inserted
 
 
 async def remove_attendance(db: AsyncSession, attendance_id: UUID):
     await db.execute(delete(Attendance).where(Attendance.id == attendance_id))
     await db.commit()
+
+
+async def remove_attendances(db: AsyncSession, attendance_ids: list[UUID]):
+    """指定した出欠IDのリストを一括で削除する。attendance_ids が空なら何もしない。
+
+    単一削除のループではなく、IN 条件で一度の DB 操作で削除を行う。
+    この実装では PostgreSQL の RETURNING を利用して、削除した行の id と date を
+    1 回の DB 呼び出しで取得して返します。
+    """
+    if not attendance_ids:
+        return []
+
+    stmt = delete(Attendance).where(Attendance.id.in_(attendance_ids)).returning(Attendance.id,
+                                                                                 Attendance.date)
+    result = await db.execute(stmt)
+    rows = result.all()
+    await db.commit()
+    # rows は sqlalchemy.engine.Row のリスト。各要素は (id, date)
+    return rows
 
 
 async def update_attendance(db: AsyncSession, attendance_id: UUID, attendance: str):
@@ -111,20 +208,6 @@ async def add_attendance_rates(db: AsyncSession, attendance_rates: list[Attendan
     # 実行してコミット
     await db.execute(stmt)
     await db.commit()
-
-    # upsert の結果として DB 側で生成された id 等を取得して返す
-    inserted: list[AttendanceRate] = []
-    for x in attendance_rates:
-        q = select(AttendanceRate).where(
-            AttendanceRate.target_id == x.target_id,
-            AttendanceRate.month == x.month,
-            AttendanceRate.actual == x.actual,
-        )
-        res = await db.execute(q)
-        ar = res.scalar_one_or_none()
-        if ar is not None:
-            inserted.append(ar)
-    return inserted
 
 
 async def get_members(db: AsyncSession, *, part: Part = None, generation: int = None,
@@ -214,9 +297,6 @@ async def update_member(db: AsyncSession, member_id: UUID, m: MemberParamsOption
         stmt = stmt.values(lecture_day=m.lecture_day)
     if m.is_competition_member is not None:
         stmt = stmt.values(is_competition_member=m.is_competition_member)
-    if m.is_temporarily_retired is not None:
-        stmt = stmt.values(is_temporarily_retired=m.is_temporarily_retired)
-
     await db.execute(stmt)
     await db.commit()
 
@@ -225,14 +305,6 @@ async def update_members_competition(db: AsyncSession, member_ids: list[UUID],
                                      is_competition_member: bool):
     stmt = update(Member).where(Member.id.in_(member_ids)).values(
         is_competition_member=is_competition_member)
-    await db.execute(stmt)
-    await db.commit()
-
-
-async def update_members_retired(db: AsyncSession, member_ids: list[UUID],
-                                 is_temporarily_retired: bool):
-    stmt = update(Member).where(Member.id.in_(member_ids)).values(
-        is_temporarily_retired=is_temporarily_retired)
     await db.execute(stmt)
     await db.commit()
 
@@ -380,7 +452,8 @@ async def update_membership_status_period(db: AsyncSession, status_period_id: UU
     await db.commit()
 
 
-async def add_membership_status_periods(db: AsyncSession, status_periods: list[MembershipStatusPeriod]):
+async def add_membership_status_periods(db: AsyncSession,
+                                        status_periods: list[MembershipStatusPeriod]):
     if not status_periods:
         return []
 
@@ -469,3 +542,134 @@ async def remove_group_members(db: AsyncSession, group_id: UUID, member_ids: lis
         )
     )
     await db.commit()
+
+
+async def get_pre_attendances(db: AsyncSession, *, member_id: UUID | None, month: str | None,
+                              pre_check_id: str | None) -> \
+        Sequence[PreAttendance]:
+    stmt = select(PreAttendance)
+
+    if member_id is not None:
+        stmt = stmt.where(PreAttendance.member_id == member_id)
+    if month is not None:
+        start = datetime.date.fromisoformat(f"{month}-01")
+        last_day = calendar.monthrange(start.year, start.month)[1]
+        end = datetime.date(start.year, start.month, last_day)
+        stmt = stmt.where(between(PreAttendance.date, start, end))
+    if pre_check_id is not None:
+        stmt = stmt.where(PreAttendance.pre_check_id == pre_check_id)
+
+    result = await db.execute(stmt)
+    return result.scalars().all()
+
+
+async def add_pre_attendances(db: AsyncSession, pre_attendances: list[PreAttendance],
+                              overwrite: bool = False):
+    if not pre_attendances:
+        return []
+
+    if not overwrite:
+        # add_all to persist each PreAttendance instance
+        db.add_all(pre_attendances)
+        await db.commit()
+
+        # refresh to populate DB-generated fields (id 等)
+        for p in pre_attendances:
+            await db.refresh(p)
+        return pre_attendances
+
+    # overwrite=True の場合はバルク upsert を行う
+    values = [
+        dict(
+            date=p.date,
+            member_id=p.member_id,
+            attendance=p.attendance,
+            reason=p.reason,
+            pre_check_id=p.pre_check_id,
+        )
+        for p in pre_attendances
+    ]
+
+    stmt = insert(PreAttendance).values(values)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["date", "member_id"],
+        set_=dict(
+            attendance=stmt.excluded.attendance,
+            reason=stmt.excluded.reason,
+            pre_check_id=stmt.excluded.pre_check_id,
+            updated_at=utils.now(),
+        )
+    )
+
+    await db.execute(stmt)
+    await db.commit()
+
+    # upsert の結果を各レコードごとに取得して返す
+    inserted: list[PreAttendance] = []
+    for p in pre_attendances:
+        q = select(PreAttendance).where(
+            PreAttendance.date == p.date,
+            PreAttendance.member_id == p.member_id,
+        )
+        res = await db.execute(q)
+        pr = res.scalar_one_or_none()
+        if pr is not None:
+            inserted.append(pr)
+    return inserted
+
+
+async def remove_pre_attendance(db: AsyncSession, pre_attendance_id: UUID):
+    await db.execute(delete(PreAttendance).where(PreAttendance.id == pre_attendance_id))
+    await db.commit()
+
+
+async def bulk_remove_pre_attendances(db: AsyncSession, pre_attendance_ids: list[UUID]):
+    await db.execute(delete(PreAttendance).where(PreAttendance.id.in_(pre_attendance_ids)))
+    await db.commit()
+
+
+async def update_pre_attendance(db: AsyncSession, pre_attendance_id: UUID, attendance: str):
+    await db.execute(
+        update(PreAttendance).where(PreAttendance.id == pre_attendance_id).values(
+            attendance=attendance)
+    )
+    await db.commit()
+
+
+async def get_pre_checks(db: AsyncSession) -> Sequence[PreAttendance]:
+    stmt = select(PreCheck)
+
+    result = await db.execute(stmt)
+    return result.scalars().all()
+
+
+async def get_pre_check_by_id(db: AsyncSession, pre_check_id: str) -> PreCheck | None:
+    stmt = select(PreCheck).where(PreCheck.id == pre_check_id)
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
+
+async def add_pre_check(db: AsyncSession, pre_checks: PreCheck):
+    db.add(pre_checks)
+    await db.commit()
+    await db.refresh(pre_checks)
+    return pre_checks
+
+
+async def remove_pre_check(db: AsyncSession, pre_check_id: str):
+    await db.execute(delete(PreCheck).where(PreCheck.id == pre_check_id))
+    await db.commit()
+
+
+async def update_pre_check(db: AsyncSession, pre_check_id: str,
+                           start_date: datetime.date, end_date: datetime.date, description: str,
+                           edit_deadline_days: int):
+    await db.execute(
+        update(PreCheck).where(PreCheck.id == pre_check_id).values(
+            start_date=start_date, end_date=end_date, description=description,
+            edit_deadline_days=edit_deadline_days)
+    )
+    await db.commit()
+    pre_check = await get_pre_check_by_id(db, pre_check_id)
+
+    return pre_check

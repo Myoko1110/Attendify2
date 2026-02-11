@@ -10,7 +10,7 @@ class Attendance(BaseModel):
     attendance: str
     created_at: datetime.datetime
     updated_at: datetime.datetime
-    member_id: UUID
+    member_id: UUID | None
 
     class Config:
         from_attributes = True
