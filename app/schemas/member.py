@@ -42,7 +42,6 @@ class MemberParams(BaseModel):
     role: Role
     lecture_day: list[str] = Field(default_factory=list)
     is_competition_member: bool = False
-    is_temporarily_retired: bool = False
 
 
 class MemberParamsOptional(BaseModel):
@@ -54,7 +53,6 @@ class MemberParamsOptional(BaseModel):
     role: Role | None = None
     lecture_day: list[str] | None = None
     is_competition_member: bool | None = None
-    is_temporarily_retired: bool | None = None
 
 
 class MemberOperationalResult(BaseModel):

@@ -72,7 +72,7 @@ async def bulk_delete_pre_attendances(pre_attendance_ids: list[UUID], db: AsyncS
 
 
 @router.patch(
-    "/attendance/{attendance_id}",
+    "/attendance/{pre_attendance_id}",
     summary="出欠情報を更新",
     description="出欠情報を更新します。出欠情報が存在しない場合でもエラーを返しません。",
 )
