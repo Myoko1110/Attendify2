@@ -16,7 +16,11 @@ ASYNC_DB_URL = URL.create(
 
 async_engine = create_async_engine(ASYNC_DB_URL, echo=False)
 async_session = async_sessionmaker(
-    autocommit=False, autoflush=False, bind=async_engine, class_=AsyncSession
+    autocommit=False,
+    autoflush=False,
+    bind=async_engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
 )
 
 

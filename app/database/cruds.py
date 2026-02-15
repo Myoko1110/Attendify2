@@ -260,9 +260,27 @@ async def get_session_by_valid_token(db: AsyncSession, token: str) -> Session | 
 
 async def add_member(db: AsyncSession, member: Member) -> Member:
     db.add(member)
+
+    # PK/DB default を確定させる（commit+refresh の代わり）
+    await db.flush()
+
+    # 返却する Member に関連をロードした状態にする（ここで1回だけ select）
+    stmt = (
+        select(Member)
+        .where(Member.id == member.id)
+        .options(
+            selectinload(Member.groups),
+            selectinload(Member.weekly_participations),
+            selectinload(Member.membership_status_periods).selectinload(
+                MembershipStatusPeriod.status
+            ),
+        )
+    )
+    result = await db.execute(stmt)
+    loaded = result.scalar_one()
+
     await db.commit()
-    await db.refresh(member)
-    return member
+    return loaded
 
 
 async def add_members(db: AsyncSession, members: list[Member]):

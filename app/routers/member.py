@@ -108,12 +108,40 @@ async def get_self(session: models.Session = Depends(get_valid_session)) -> Memb
     "",
     summary="部員を登録",
     description="部員を登録します。",
-    response_model=Member,
+    response_model=MemberDetailSchema,
 )
 async def post_member(m: MemberParams = Form(), db: AsyncSession = Depends(get_db)):
     try:
         member = models.Member(**m.model_dump())
-        return await cruds.add_member(db, member)
+        result = await cruds.add_member(db, member)
+
+        records_dict = {r.weekday: r for r in result.weekly_participations}
+
+        weekly_list = []
+        for day in range(7):
+            if day in records_dict:
+                rec = records_dict[day]
+                weekly_list.append(
+                    models.WeeklyParticipation(
+                        id=rec.id,
+                        member_id=rec.member_id,
+                        weekday=rec.weekday,
+                        is_active=rec.is_active,
+                        default_attendance=rec.default_attendance,
+                    )
+                )
+            else:
+                weekly_list.append(
+                    models.WeeklyParticipation(
+                        id=uuid4(),
+                        member_id=result.id,
+                        weekday=day,
+                        is_active=False,
+                    )
+                )
+        result.weekly_participations = weekly_list
+
+        return result
     except IntegrityError as e:
         raise APIErrorCode.ALREADY_EXISTS_MEMBER_EMAIL.of(f"Already exists member email: {e.code}")
 
