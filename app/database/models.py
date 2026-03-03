@@ -1,4 +1,3 @@
-import datetime
 from enum import Enum
 from uuid import uuid4
 from typing import Optional
@@ -6,7 +5,6 @@ from typing import Optional
 import nanoid
 from sqlalchemy import Boolean, Column, Date, DateTime, Double, ForeignKey, Integer, JSON, String, \
     TypeDecorator, UniqueConstraint, Uuid
-from sqlalchemy.dialects.postgresql import DATERANGE
 from sqlalchemy.orm import declarative_base, relationship
 
 from app import utils
@@ -177,6 +175,7 @@ class Schedule(Base):
     generations = Column(JSON, nullable=True)
     groups = Column(JSON, nullable=True)
     exclude_groups = Column(JSON, nullable=True)
+    is_pre_attendance_target = Column(Boolean, nullable=False, default=True)
 
 
 class PreAttendance(Base):

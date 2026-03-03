@@ -3,7 +3,6 @@ import datetime
 from pydantic import BaseModel
 
 from app.abc.schedule_type import ScheduleType
-from app.database import models
 
 
 class Schedule(BaseModel):
@@ -12,6 +11,7 @@ class Schedule(BaseModel):
     generations: list[int] | None = None
     groups: list[str] | None = None
     exclude_groups: list[str] | None = None
+    is_pre_attendance_target: bool = False
 
     class Config:
         from_attributes = True

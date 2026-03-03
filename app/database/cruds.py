@@ -348,13 +348,15 @@ async def get_schedules(db: AsyncSession) -> list[Schedule]:
 async def add_schedule(db: AsyncSession, schedule: Schedule):
     stmt = insert(Schedule).values(date=schedule.date, type=schedule.type,
                                    groups=schedule.groups, exclude_groups=schedule.exclude_groups,
-                                   generations=schedule.generations).on_conflict_do_update(
+                                   generations=schedule.generations,
+                                   is_pre_attendance_target=schedule.is_pre_attendance_target).on_conflict_do_update(
         index_elements=["date"],
         set_={
             "type": schedule.type,
             "groups": schedule.groups,
             "exclude_groups": schedule.exclude_groups,
             "generations": schedule.generations,
+            "is_pre_attendance_target": schedule.is_pre_attendance_target,
         },
     )
     await db.execute(stmt)
