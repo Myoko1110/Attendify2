@@ -246,14 +246,20 @@ def _export_sheet(
             for day in schedule_days_by_month.get(mk, []):
                 columns.append((mk, day))
 
+    # ヘッダは2行使う（1行目: 見出し、2行目: 出席率）
     header_row = 1
-    ws.row_dimensions[header_row].height = 36
+    header_rate_row = header_row + 1
+    ws.row_dimensions[header_row].height = 48
+    ws.row_dimensions[header_rate_row].height = 18
 
     tl = ws.cell(row=header_row, column=1, value="全体")
     apply_cell_base(tl)
     tl.fill = HEADER_LEFT_FILL
     tl.font = Font(name="メイリオ", bold=True, color="FFFFFF", size=16)
     tl.alignment = CENTER
+
+    # 「全体」は2行分を縦結合しておく
+    ws.merge_cells(start_row=header_row, start_column=1, end_row=header_rate_row, end_column=1)
 
     ws.column_dimensions["A"].width = 22
 
@@ -267,6 +273,7 @@ def _export_sheet(
         else:
             idx_day_col[(mk, day)] = col_idx
 
+        # 1行目セル（見出し）
         c = ws.cell(row=header_row, column=col_idx)
         apply_cell_base(c)
 
@@ -276,7 +283,16 @@ def _export_sheet(
             ws.column_dimensions[get_column_letter(col_idx)].width = day_col_width
 
         if day is None:
+            # ---- 月セル: 1行目=◯月, 2行目=月別出席率（write_rateでスタイル統一） ----
             month_num = int(mk.split("-")[1])
+
+            # 1行目（◯月）
+            c.value = f"{month_num}月"
+            c.fill = HEADER_MONTH_FILL
+            c.font = Font(name="メイリオ", bold=True, color="1D4ED8", size=12)
+            c.alignment = CENTER
+
+            # 2行目（月別出席率）
             attendances: list[str] = []
             for part_mems in by_part.values():
                 for mem in part_mems:
@@ -286,13 +302,16 @@ def _export_sheet(
                         if a and ATTENDANCE_STATUSES.get(a, {}).get("counted"):
                             attendances.append(a)
             rate = calc_rate_from_attendances(attendances)
-            c.value = f"{month_num}月\n{rate}" if rate is not None else f"{month_num}月"
-            c.fill = HEADER_MONTH_FILL
-            c.font = Font(name="メイリオ", bold=True, color="1D4ED8", size=12)
-            c.alignment = CENTER_WRAP
+
+            rate_cell = ws.cell(row=header_rate_row, column=col_idx)
+            write_rate(rate_cell, rate, base_fill=HEADER_MONTH_FILL, bold=True)
+
+            # 80%未満のときは月(上段)も赤に寄せて見た目を揃える
             if rate is not None and rate < 80:
                 c.font = Font(name="メイリオ", bold=True, color="DC2626", size=12)
+
         else:
+            # ---- 日セル: 1行目=日付, 2行目=日別出席率（write_rateでスタイル統一） ----
             date = dt.date.fromisoformat(f"{mk}-{day:02d}")
             day_att: list[str] = []
             for part_mems in by_part.values():
@@ -301,19 +320,28 @@ def _export_sheet(
                     if a and ATTENDANCE_STATUSES.get(a, {}).get("counted"):
                         day_att.append(a)
             day_rate = calc_rate_from_attendances(day_att)
-            c.value = f"{day}\n{day_rate}" if day_rate is not None else f"{day}"
+
+            # 1行目（日付）
+            c.value = f"{day}"
             c.fill = HEADER_DAY_FILL
             c.font = Font(name="メイリオ", bold=True, color="111827", size=12)
-            c.alignment = CENTER_WRAP
+            c.alignment = CENTER
+
+            # 2行目（日別出席率）
+            day_rate_cell = ws.cell(row=header_rate_row, column=col_idx)
+            write_rate(day_rate_cell, day_rate, base_fill=HEADER_DAY_FILL, bold=True)
+
+            # 80%未満のときは日付(上段)も赤に寄せて見た目を揃える
             if day_rate is not None and day_rate < 80:
                 c.font = Font(name="メイリオ", bold=True, color="DC2626", size=12)
+
 
         col_idx += 1
 
     max_col = col_idx - 1
-    ws.freeze_panes = "B2"
+    ws.freeze_panes = "B3"
 
-    row = 2
+    row = header_rate_row + 1
     # enShort map from settings.yml (optional)
     en_short_map = _fetch_part_en_short_map(Path("settings.yml"))
 
