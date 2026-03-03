@@ -327,8 +327,21 @@ async def update_members_competition(db: AsyncSession, member_ids: list[UUID],
     await db.commit()
 
 
+async def update_members_retired(db: AsyncSession, member_ids: list[UUID],
+                                 is_temporarily_retired: bool):
+    """指定した部員の一時引退フラグを一括更新する。"""
+    if not member_ids:
+        return
+
+    stmt = update(Member).where(Member.id.in_(member_ids)).values(
+        is_temporarily_retired=is_temporarily_retired
+    )
+    await db.execute(stmt)
+    await db.commit()
+
+
 async def get_schedules(db: AsyncSession) -> list[Schedule]:
-    result = await db.execute(select(Schedule))
+    result = await db.execute(select(Schedule).order_by(Schedule.date))
     return [r[0] for r in result.all()]
 
 

@@ -8,7 +8,7 @@ from starlette.responses import FileResponse, JSONResponse
 from .abc.api_error import APIError
 from .dependencies import get_valid_session
 from .routers import attendance, auth, constant, group, member, membership_status, pre_attendance, \
-    schedule
+    schedule, attendance_export
 from .utils import settings
 
 app = FastAPI()
@@ -16,6 +16,7 @@ app = FastAPI()
 api = APIRouter(prefix="/api")
 api.include_router(auth.router)
 api.include_router(attendance.router)
+api.include_router(attendance_export.router)
 api.include_router(member.router)
 api.include_router(membership_status.router)
 api.include_router(group.router)
@@ -82,4 +83,3 @@ async def on_startup():
     from .database import migrate
     await migrate()
     print("Database migrated.")
-

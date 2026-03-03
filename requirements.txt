@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+pydantic
+PyYAML
+psycopg2-binary
+openpyxl
