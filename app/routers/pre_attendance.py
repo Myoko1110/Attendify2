@@ -128,7 +128,8 @@ async def delete_pre_check(pre_check_id: str, db: AsyncSession = Depends(get_db)
 )
 async def patch_pre_check(pre_check_id: str, start_date: datetime.date = Body(),
                           end_date: datetime.date = Body(), description: str = Body(),
+                          deadline: datetime.datetime = Body(),
                           edit_deadline_days: int = Body(),
                           db: AsyncSession = Depends(get_db)):
-    return await cruds.update_pre_check(db, pre_check_id, start_date, end_date, description,
+    return await cruds.update_pre_check(db, pre_check_id, start_date, end_date, description, deadline,
                                         edit_deadline_days)

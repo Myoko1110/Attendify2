@@ -245,6 +245,12 @@ async def get_member_by_email(db: AsyncSession, email: str) -> Member | None:
     return result.scalar_one_or_none()
 
 
+async def get_member_by_felica_idm(db: AsyncSession, felica_idm: str) -> Member | None:
+    stmt = select(Member).where(Member.felica_idm == felica_idm)
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
+
 async def get_session_by_valid_token(db: AsyncSession, token: str) -> Session | None:
     stmt = select(Session).where(Session.token == token).options(selectinload(Session.member))
     result = await db.execute(stmt)
@@ -315,6 +321,9 @@ async def update_member(db: AsyncSession, member_id: UUID, m: MemberParamsOption
         stmt = stmt.values(lecture_day=m.lecture_day)
     if m.is_competition_member is not None:
         stmt = stmt.values(is_competition_member=m.is_competition_member)
+    if m.felica_idm is not None:
+        stmt = stmt.values(felica_idm=m.felica_idm)
+
     await db.execute(stmt)
     await db.commit()
 
@@ -346,17 +355,27 @@ async def get_schedules(db: AsyncSession) -> list[Schedule]:
 
 
 async def add_schedule(db: AsyncSession, schedule: Schedule):
-    stmt = insert(Schedule).values(date=schedule.date, type=schedule.type,
-                                   groups=schedule.groups, exclude_groups=schedule.exclude_groups,
-                                   generations=schedule.generations,
-                                   is_pre_attendance_target=schedule.is_pre_attendance_target).on_conflict_do_update(
+    # 後方互換: `is_pre_attendance_target` が直接指定されている場合はそれを優先。
+    # それ以外は新フィールド `is_pre_attendance_excluded` を使い、target はその否定として保存する。
+    target = getattr(schedule, "is_pre_attendance_target", None)
+    if target is None:
+        target = not bool(getattr(schedule, "is_pre_attendance_excluded", False))
+
+    stmt = insert(Schedule).values(
+        date=schedule.date,
+        type=schedule.type,
+        groups=schedule.groups,
+        exclude_groups=schedule.exclude_groups,
+        generations=schedule.generations,
+        is_pre_attendance_target=target,
+    ).on_conflict_do_update(
         index_elements=["date"],
         set_={
             "type": schedule.type,
             "groups": schedule.groups,
             "exclude_groups": schedule.exclude_groups,
             "generations": schedule.generations,
-            "is_pre_attendance_target": schedule.is_pre_attendance_target,
+            "is_pre_attendance_target": target,
         },
     )
     await db.execute(stmt)
@@ -429,7 +448,8 @@ async def remove_membership_status(db: AsyncSession, status_id: UUID):
 
 async def update_membership_status(db: AsyncSession, status_id: UUID, display_name: str | None,
                                    is_attendance_target: bool | None,
-                                   default_attendance: str | None):
+                                   default_attendance: str | None,
+                                   is_pre_attendance_excluded: bool | None = None):
     stmt = update(MembershipStatus).where(MembershipStatus.id == status_id)
 
     if display_name is not None:
@@ -438,6 +458,9 @@ async def update_membership_status(db: AsyncSession, status_id: UUID, display_na
         stmt = stmt.values(is_attendance_target=is_attendance_target)
     if default_attendance is not None:
         stmt = stmt.values(default_attendance=default_attendance)
+    if is_pre_attendance_excluded is not None:
+        # excluded=True -> target=False
+        stmt = stmt.values(is_pre_attendance_target=(not bool(is_pre_attendance_excluded)))
 
     await db.execute(stmt)
     await db.commit()
@@ -696,10 +719,12 @@ async def remove_pre_check(db: AsyncSession, pre_check_id: str):
 
 async def update_pre_check(db: AsyncSession, pre_check_id: str,
                            start_date: datetime.date, end_date: datetime.date, description: str,
+                           deadline: datetime.datetime,
                            edit_deadline_days: int):
     await db.execute(
         update(PreCheck).where(PreCheck.id == pre_check_id).values(
             start_date=start_date, end_date=end_date, description=description,
+            deadline=deadline,
             edit_deadline_days=edit_deadline_days)
     )
     await db.commit()

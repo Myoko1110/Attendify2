@@ -1,6 +1,6 @@
 from enum import Enum
-from uuid import uuid4
 from typing import Optional
+from uuid import uuid4
 
 import nanoid
 from sqlalchemy import Boolean, Column, Date, DateTime, Double, ForeignKey, Integer, JSON, String, \
@@ -55,9 +55,13 @@ class Member(Base):
     lecture_day = Column(JSON, nullable=False, default=[])
     is_competition_member = Column(Boolean, nullable=False, default=False)
 
+    felica_idm = Column(String(23), nullable=True)
+
     groups = relationship("Group", secondary="member_groups", back_populates="members")
-    weekly_participations = relationship("WeeklyParticipation", back_populates="member", cascade="all, delete-orphan", passive_deletes=True)
-    membership_status_periods = relationship("MembershipStatusPeriod", back_populates="member", cascade="all, delete-orphan", passive_deletes=True)
+    weekly_participations = relationship("WeeklyParticipation", back_populates="member",
+                                         cascade="all, delete-orphan", passive_deletes=True)
+    membership_status_periods = relationship("MembershipStatusPeriod", back_populates="member",
+                                             cascade="all, delete-orphan", passive_deletes=True)
 
 
 class WeeklyParticipation(Base):
@@ -86,10 +90,12 @@ class MembershipStatus(Base):
 
     is_attendance_target = Column(Boolean, nullable=False)  # 出席入力画面に表示するかどうか
     default_attendance = Column(String(32), nullable=False)  # 出席入力画面の出席状態
+    is_pre_attendance_excluded = Column(Boolean, nullable=False, default=False)
 
     created_at = Column(DateTime(timezone=True), default=utils.now)
 
-    status_periods = relationship("MembershipStatusPeriod", back_populates="status", cascade="all, delete-orphan", passive_deletes=True)
+    status_periods = relationship("MembershipStatusPeriod", back_populates="status",
+                                  cascade="all, delete-orphan", passive_deletes=True)
 
 
 # 部員の状態期間
@@ -99,7 +105,8 @@ class MembershipStatusPeriod(Base):
     id = Column(Uuid, primary_key=True, default=uuid4)
 
     member_id = Column(Uuid, ForeignKey("members.id", ondelete="CASCADE"), nullable=False)
-    status_id = Column(Uuid, ForeignKey("membership_statuses.id", ondelete="CASCADE"), nullable=False)
+    status_id = Column(Uuid, ForeignKey("membership_statuses.id", ondelete="CASCADE"),
+                       nullable=False)
 
     start_date = Column(Date, nullable=False)
     end_date = Column(Date, nullable=True)
@@ -145,7 +152,8 @@ class Attendance(Base):
     member_id = Column(Uuid, ForeignKey("members.id", ondelete="SET NULL"), nullable=True)
     attendance = Column(String(64), nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False, default=utils.now)
-    updated_at = Column(DateTime(timezone=True), nullable=False, onupdate=utils.now, default=utils.now)
+    updated_at = Column(DateTime(timezone=True), nullable=False, onupdate=utils.now,
+                        default=utils.now)
 
     member = relationship("Member", lazy="selectin")
 
@@ -164,7 +172,8 @@ class AttendanceRate(Base):
 
     rate = Column(Double, nullable=True, default=None)
     actual = Column(Boolean, nullable=False, default=False)
-    updated_at = Column(DateTime(timezone=True), nullable=False, default=utils.now, onupdate=utils.now)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=utils.now,
+                        onupdate=utils.now)
 
 
 class Schedule(Base):
@@ -189,9 +198,11 @@ class PreAttendance(Base):
     member_id = Column(Uuid, ForeignKey("members.id", ondelete="SET NULL"), nullable=True)
     attendance = Column(String(64), nullable=False)
     reason = Column(String(256), nullable=True)
-    pre_check_id = Column(String(10), ForeignKey("pre_checks.id", ondelete="SET NULL"), nullable=True)
+    pre_check_id = Column(String(10), ForeignKey("pre_checks.id", ondelete="SET NULL"),
+                          nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=utils.now)
-    updated_at = Column(DateTime(timezone=True), nullable=False, onupdate=utils.now, default=utils.now)
+    updated_at = Column(DateTime(timezone=True), nullable=False, onupdate=utils.now,
+                        default=utils.now)
 
 
 class PreCheck(Base):
@@ -201,6 +212,7 @@ class PreCheck(Base):
     start_date = Column(Date, nullable=False)
     end_date = Column(Date, nullable=False)
     description = Column(String(256), default="", nullable=False)
+    deadline = Column(DateTime(timezone=True), nullable=True)
     edit_deadline_days = Column(Integer, nullable=False, default=0)
 
 
@@ -212,4 +224,3 @@ class Session(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, default=utils.now)
 
     member = relationship("Member")
-

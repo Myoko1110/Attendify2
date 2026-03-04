@@ -28,6 +28,7 @@ class Member(BaseModel):
     role: Role
     lecture_day: list[str]
     is_competition_member: bool
+    felica_idm: str | None
 
     class Config:
         from_attributes = True
@@ -42,6 +43,7 @@ class MemberParams(BaseModel):
     role: Role
     lecture_day: list[str] = Field(default_factory=list)
     is_competition_member: bool = False
+    felica_idm: str | None = None
 
 
 class MemberParamsOptional(BaseModel):
@@ -53,6 +55,7 @@ class MemberParamsOptional(BaseModel):
     role: Role | None = None
     lecture_day: list[str] | None = None
     is_competition_member: bool | None = None
+    felica_idm: str | None = None
 
 
 class MemberOperationalResult(BaseModel):

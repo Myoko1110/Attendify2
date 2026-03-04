@@ -169,6 +169,86 @@ async def get_self(
     return MemberDetailSchema(**data)
 
 
+
+@router.get(
+    "/idm/{felica_idm}",
+    summary="FelicaのIDmから部員を取得",
+    description="FelicaのIDmから部員を取得します。",
+    response_model=MemberDetailSchema | None,
+)
+async def get_by_felica_idm(
+    felica_idm: str,
+    include_groups: bool = False,
+    include_weekly_participation: bool = False,
+    include_status_periods: bool = False,
+    db: AsyncSession = Depends(get_db),
+) -> MemberDetailSchema | None:
+    print(felica_idm)
+    member = await cruds.get_member_by_felica_idm(db, felica_idm)
+    print(member)
+    if member is None:
+        return None
+
+    # 追加情報が必要なら、必要な関連だけ selectinload するために取り直す
+    if include_groups or include_weekly_participation or include_status_periods:
+        loaded = await cruds.get_members(
+            db,
+            include_groups=include_groups,
+            include_weekly_participation=include_weekly_participation,
+            include_status_periods=include_status_periods,
+        )
+        # get_members はフィルタなしだと全件取得なので、自分だけに絞る
+        member = next((m for m in loaded if m.id == member.id), member)
+
+    if include_weekly_participation:
+        records_dict = {r.weekday: r for r in member.weekly_participations}
+        weekly_list = []
+        for day in range(7):
+            if day in records_dict:
+                rec = records_dict[day]
+                weekly_list.append(
+                    models.WeeklyParticipation(
+                        id=rec.id,
+                        member_id=rec.member_id,
+                        weekday=rec.weekday,
+                        is_active=rec.is_active,
+                        default_attendance=rec.default_attendance,
+                    )
+                )
+            else:
+                weekly_list.append(
+                    models.WeeklyParticipation(
+                        id=uuid4(),
+                        member_id=member.id,
+                        weekday=day,
+                        is_active=False,
+                    )
+                )
+        member.weekly_participations = weekly_list
+
+    data = Member.model_validate(member).model_dump()
+
+    data["groups"] = (
+        MemberGroupsSchema.model_validate(member).groups
+        if include_groups
+        else []
+    )
+
+    data["weekly_participations"] = (
+        MemberWeeklySchema.model_validate(member).weekly_participations
+        if include_weekly_participation
+        else []
+    )
+
+    data["membership_status_periods"] = (
+        MembershipStatusPeriodSchema.model_validate(member).membership_status_periods
+        if include_status_periods
+        else []
+    )
+
+    return MemberDetailSchema(**data)
+
+
 @router.post(
     "",
     summary="部員を登録",

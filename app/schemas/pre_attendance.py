@@ -32,6 +32,7 @@ class PreCheck(BaseModel):
     start_date: datetime.date
     end_date: datetime.date
     description: str
+    deadline: datetime.datetime | None
     edit_deadline_days: int
 
     class Config:
@@ -42,6 +43,7 @@ class PreCheckParams(BaseModel):
     start_date: datetime.date
     end_date: datetime.date
     description: str
+    deadline: datetime.datetime | None
     edit_deadline_days: int
 
     class Config:
