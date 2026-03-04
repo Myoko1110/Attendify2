@@ -600,7 +600,7 @@ async def remove_group_members(db: AsyncSession, group_id: UUID, member_ids: lis
     await db.commit()
 
 
-async def get_pre_attendances(db: AsyncSession, *, member_id: UUID | None, month: str | None,
+async def get_pre_attendances(db: AsyncSession, *, member_id: UUID | None, month: str | None, date: datetime.date | None,
                               pre_check_id: str | None) -> \
         Sequence[PreAttendance]:
     stmt = select(PreAttendance)
@@ -614,6 +614,8 @@ async def get_pre_attendances(db: AsyncSession, *, member_id: UUID | None, month
         stmt = stmt.where(between(PreAttendance.date, start, end))
     if pre_check_id is not None:
         stmt = stmt.where(PreAttendance.pre_check_id == pre_check_id)
+    if date is not None:
+        stmt = stmt.where(PreAttendance.date == date)
 
     result = await db.execute(stmt)
     return result.scalars().all()

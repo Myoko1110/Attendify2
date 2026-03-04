@@ -22,9 +22,10 @@ router = APIRouter(prefix="/pre-check", tags=["PreCheck"],
     response_model=list[schemas.PreAttendance],
 )
 async def get_pre_attendances(member_id: UUID = None, month: str = None, pre_check_id: str = None,
+                              date: datetime.date = None,
                               db: AsyncSession = Depends(get_db)):
     result = await cruds.get_pre_attendances(db, member_id=member_id, month=month,
-                                             pre_check_id=pre_check_id)
+                                             pre_check_id=pre_check_id, date=date)
     return result
 
 
