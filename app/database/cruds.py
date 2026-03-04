@@ -245,10 +245,10 @@ async def get_member_by_email(db: AsyncSession, email: str) -> Member | None:
     return result.scalar_one_or_none()
 
 
-async def get_member_by_felica_idm(db: AsyncSession, felica_idm: str) -> Member | None:
+"""async def get_member_by_felica_idm(db: AsyncSession, felica_idm: str) -> Member | None:
     stmt = select(Member).where(Member.felica_idm == felica_idm)
     result = await db.execute(stmt)
-    return result.scalar_one_or_none()
+    return result.scalar_one_or_none()"""
 
 
 async def get_session_by_valid_token(db: AsyncSession, token: str) -> Session | None:

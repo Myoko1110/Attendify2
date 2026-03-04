@@ -28,7 +28,7 @@ class Member(BaseModel):
     role: Role
     lecture_day: list[str]
     is_competition_member: bool
-    felica_idm: str | None
+    # felica_idm: str | None
 
     class Config:
         from_attributes = True
@@ -55,7 +55,7 @@ class MemberParamsOptional(BaseModel):
     role: Role | None = None
     lecture_day: list[str] | None = None
     is_competition_member: bool | None = None
-    felica_idm: str | None = None
+    # felica_idm: str | None = None
 
 
 class MemberOperationalResult(BaseModel):

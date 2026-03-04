@@ -169,7 +169,7 @@ async def get_self(
     return MemberDetailSchema(**data)
 
 
-
+"""
 @router.get(
     "/idm/{felica_idm}",
     summary="FelicaのIDmから部員を取得",
@@ -247,7 +247,7 @@ async def get_by_felica_idm(
     )
 
     return MemberDetailSchema(**data)
-
+"""
 
 @router.post(
     "",

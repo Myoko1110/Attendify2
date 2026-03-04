@@ -55,7 +55,7 @@ class Member(Base):
     lecture_day = Column(JSON, nullable=False, default=[])
     is_competition_member = Column(Boolean, nullable=False, default=False)
 
-    felica_idm = Column(String(23), nullable=True)
+    # felica_idm = Column(String(23), nullable=True)
 
     groups = relationship("Group", secondary="member_groups", back_populates="members")
     weekly_participations = relationship("WeeklyParticipation", back_populates="member",
