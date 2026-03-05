@@ -43,7 +43,7 @@ class MemberParams(BaseModel):
     role: Role
     lecture_day: list[str] = Field(default_factory=list)
     is_competition_member: bool = False
-    felica_idm: str | None = None
+    # felica_idm: str | None = None
 
 
 class MemberParamsOptional(BaseModel):

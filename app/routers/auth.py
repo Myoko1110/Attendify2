@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
 from app.abc.api_error import APIErrorCode
+from app.abc.part import Part
 from app.database import cruds, get_db
 from app.dependencies import get_valid_session
 from app.schemas import Member
@@ -24,7 +25,8 @@ flow = Flow.from_client_secrets_file(
     description="Googleアカウントでログインします。",
     response_model=Member,
 )
-async def login(request: Request, code: str = Form(), state: str = Form(), db: AsyncSession = Depends(get_db)):
+async def login(request: Request, code: str = Form(), state: str = Form(),
+                db: AsyncSession = Depends(get_db)):
     if request.session.get("state") != state:
         raise APIErrorCode.INVALID_AUTHENTICATION_CREDENTIALS.of("Authentication failed", 400)
 
@@ -50,6 +52,26 @@ async def login(request: Request, code: str = Form(), state: str = Form(), db: A
 
     await db.refresh(member)
 
+    return member
+
+
+@router.post(
+    "/login/temp",
+    summary="ログイン",
+    description="ログインします。",
+    response_model=Member,
+)
+async def login_temp(request: Request, generation: int = Form(), part: Part = Form(), email: str = Form(),
+                     db: AsyncSession = Depends(get_db)):
+    member = await cruds.get_member_by_email(db, email)
+    if not member or member.generation != generation or member.part != part:
+        raise APIErrorCode.PERMISSION_DENIED.of("Permission denied", 403)
+
+    token = await cruds.create_session(db, member)
+    request.session["token"] = token
+    request.session.pop("state")
+
+    await db.refresh(member)
     return member
 
 

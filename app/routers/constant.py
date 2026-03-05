@@ -1,21 +1,21 @@
-from pathlib import Path
+from fastapi import APIRouter, Depends
 
-import yaml
 from fastapi import APIRouter, Depends
 
 from app.abc.part import Part
 from app.abc.role import Role
 from app.dependencies import get_valid_session
 from app.schemas.constant import GradesSchema, PartSchema
-from app.utils import load_setting_data, settings
+from app.utils import settings
 
-router = APIRouter(prefix="/constant", tags=["Constant"], dependencies=[Depends(get_valid_session)])
+router = APIRouter(prefix="/constant", tags=["Constant"])
 
 
 @router.get(
     "/part",
     summary="パートを取得",
     description="パートの情報を取得します。",
+    dependencies=[Depends(get_valid_session)]
 )
 async def get_part() -> dict[Part, PartSchema]:
     return {p: PartSchema.create(p.detail) for p in Part}
@@ -25,12 +25,10 @@ async def get_part() -> dict[Part, PartSchema]:
     "/role",
     summary="役職を取得",
     description="役職の情報を取得します。",
+    dependencies=[Depends(get_valid_session)]
 )
 async def get_role() -> dict[Role, str]:
     return {r: r.display_name for r in Role}
-
-
-
 
 
 @router.get(

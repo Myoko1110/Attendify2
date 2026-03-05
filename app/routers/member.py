@@ -168,7 +168,6 @@ async def get_self(
 
     return MemberDetailSchema(**data)
 
-
 """
 @router.get(
     "/idm/{felica_idm}",

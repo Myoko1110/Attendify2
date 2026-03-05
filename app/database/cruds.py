@@ -245,10 +245,10 @@ async def get_member_by_email(db: AsyncSession, email: str) -> Member | None:
     return result.scalar_one_or_none()
 
 
-"""async def get_member_by_felica_idm(db: AsyncSession, felica_idm: str) -> Member | None:
-    stmt = select(Member).where(Member.felica_idm == felica_idm)
-    result = await db.execute(stmt)
-    return result.scalar_one_or_none()"""
+# async def get_member_by_felica_idm(db: AsyncSession, felica_idm: str) -> Member | None:
+#     stmt = select(Member).where(Member.felica_idm == felica_idm)
+#     result = await db.execute(stmt)
+#     return result.scalar_one_or_none()
 
 
 async def get_session_by_valid_token(db: AsyncSession, token: str) -> Session | None:
@@ -321,8 +321,8 @@ async def update_member(db: AsyncSession, member_id: UUID, m: MemberParamsOption
         stmt = stmt.values(lecture_day=m.lecture_day)
     if m.is_competition_member is not None:
         stmt = stmt.values(is_competition_member=m.is_competition_member)
-    if m.felica_idm is not None:
-        stmt = stmt.values(felica_idm=m.felica_idm)
+    # if m.felica_idm is not None:
+    #     stmt = stmt.values(felica_idm=m.felica_idm)
 
     await db.execute(stmt)
     await db.commit()
