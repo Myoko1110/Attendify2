@@ -721,7 +721,7 @@ async def remove_pre_check(db: AsyncSession, pre_check_id: str):
 
 async def update_pre_check(db: AsyncSession, pre_check_id: str,
                            start_date: datetime.date, end_date: datetime.date, description: str,
-                           deadline: datetime.datetime,
+                           deadline: datetime.datetime | None,
                            edit_deadline_days: int):
     await db.execute(
         update(PreCheck).where(PreCheck.id == pre_check_id).values(
