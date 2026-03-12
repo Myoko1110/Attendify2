@@ -68,6 +68,8 @@ PERMISSION_IMPLIES: list[tuple[str, str]] = [
     ("dashboard:write", "dashboard:access"),
 
     ("pre-check:write", "pre-check:read"),
+    ("pre-check:write", "schedule:read"),
+    ("pre-check:write", "member:self"),
 ]
 
 
@@ -97,7 +99,18 @@ DEFAULT_ROLES: list[RoleDef] = [
         description="閲覧のみを許可",
         permission_keys=(
             "dashboard:access",
+            "pre-check:write",
         ),
+    ),
+    RoleDef(
+        key="input",
+        display_name="入力",
+        description="出欠の入力",
+        permission_keys=(
+            "dashboard:access",
+            "attendance:write",
+            "pre-check:write",
+        )
     ),
     RoleDef(
         key="default",
