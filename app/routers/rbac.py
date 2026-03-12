@@ -25,7 +25,6 @@ from app.schemas.rbac import (
 router = APIRouter(
     prefix="/rbac",
     tags=["RBAC"],
-    dependencies=[Depends(require_permission("rbac:manage"))],
 )
 
 
@@ -39,13 +38,13 @@ async def list_roles(db: AsyncSession = Depends(get_db)):
     return await cruds.rbac_list_roles(db)
 
 
-@router.post("/roles", response_model=RoleSchema, status_code=201)
+@router.post("/roles", response_model=RoleSchema, status_code=201, dependencies=[Depends(require_permission("rbac:manage"))],)
 async def create_role(payload: RoleCreate, db: AsyncSession = Depends(get_db)):
     role = await cruds.rbac_create_role(db, key=payload.key, display_name=payload.display_name, description=payload.description)
     return role
 
 
-@router.patch("/roles/{role_key}", response_model=RoleSchema)
+@router.patch("/roles/{role_key}", response_model=RoleSchema, dependencies=[Depends(require_permission("rbac:manage"))],)
 async def update_role(role_key: str, payload: RoleUpdate, db: AsyncSession = Depends(get_db)):
     role = await cruds.rbac_update_role(db, role_key, display_name=payload.display_name, description=payload.description)
     if role is None:
@@ -53,7 +52,7 @@ async def update_role(role_key: str, payload: RoleUpdate, db: AsyncSession = Dep
     return role
 
 
-@router.delete("/roles/{role_key}", response_model=ResultSchema)
+@router.delete("/roles/{role_key}", response_model=ResultSchema, dependencies=[Depends(require_permission("rbac:manage"))],)
 async def delete_role(role_key: str, db: AsyncSession = Depends(get_db)):
     deleted = await cruds.rbac_delete_role(db, role_key)
     if not deleted:
@@ -69,7 +68,7 @@ async def get_role_permissions(role_key: str, db: AsyncSession = Depends(get_db)
     return sorted(role.permissions, key=lambda p: p.key)
 
 
-@router.put("/roles/{role_key}/permissions", response_model=list[PermissionSchema])
+@router.put("/roles/{role_key}/permissions", response_model=list[PermissionSchema], dependencies=[Depends(require_permission("rbac:manage"))],)
 async def put_role_permissions(role_key: str, payload: RolePermissionAssign, db: AsyncSession = Depends(get_db)):
     try:
         role = await cruds.rbac_replace_role_permissions(db, role_key, permission_keys=payload.permission_keys)
@@ -99,7 +98,7 @@ async def get_generations_roles(
     return items
 
 
-@router.put("/generations/{generation}/roles", response_model=ResultSchema)
+@router.put("/generations/{generation}/roles", response_model=ResultSchema, dependencies=[Depends(require_permission("rbac:manage"))],)
 async def put_generation_roles(generation: int, payload: GenerationRoleAssign, db: AsyncSession = Depends(get_db)):
     try:
         await cruds.rbac_replace_generation_roles(db, generation, role_keys=payload.role_keys)
@@ -110,7 +109,7 @@ async def put_generation_roles(generation: int, payload: GenerationRoleAssign, d
     return ResultSchema(result=True)
 
 
-@router.put("/generations/roles", response_model=ResultSchema)
+@router.put("/generations/roles", response_model=ResultSchema, dependencies=[Depends(require_permission("rbac:manage"))],)
 async def put_generations_roles(payload: list[GenerationRole], db: AsyncSession = Depends(get_db)):
     try:
         await cruds.rbac_replace_generations_roles_bulk(
@@ -140,7 +139,7 @@ async def get_member_roles(member_id: UUID, db: AsyncSession = Depends(get_db)):
     return MemberRolesSchema(member_id=member_id, role_keys=keys)
 
 
-@router.put("/members/{member_id}/roles", response_model=ResultSchema)
+@router.put("/members/{member_id}/roles", response_model=ResultSchema, dependencies=[Depends(require_permission("rbac:manage"))],)
 async def put_member_roles(member_id: UUID, payload: MemberRoleAssign, db: AsyncSession = Depends(get_db)):
     try:
         await cruds.rbac_replace_member_roles(db, member_id, role_keys=payload.role_keys)
