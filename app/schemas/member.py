@@ -128,4 +128,9 @@ class MemberDetailSchema(
     MemberWeeklySchema,
     MembershipStatusPeriodSchema,
 ):
-    pass
+    # RBAC role keys
+    generation_role_keys: list[str] = Field(default_factory=list)
+    member_role_keys: list[str] = Field(default_factory=list)
+    effective_role_keys: list[str] = Field(default_factory=list)
+    # RBAC permission keys (transitive closure)
+    effective_permission_keys: list[str] = Field(default_factory=list)

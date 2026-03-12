@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import cruds, get_db
-from app.dependencies import get_valid_session
+from app.database import cruds, get_db, models
+from app.dependencies import get_valid_session, require_permission
 from app.schemas import *
 
 router = APIRouter(prefix="/group", tags=["Group"], dependencies=[Depends(get_valid_session)])
@@ -13,6 +13,7 @@ router = APIRouter(prefix="/group", tags=["Group"], dependencies=[Depends(get_va
     summary="グループを取得",
     description="グループを取得します。",
     response_model=list[Group],
+dependencies=[Depends(require_permission("group:read"))],
 )
 async def get_groups(db: AsyncSession = Depends(get_db)):
     return await cruds.get_groups(db)
@@ -23,6 +24,7 @@ async def get_groups(db: AsyncSession = Depends(get_db)):
     summary="グループを作成",
     description="新しいグループを作成します。",
     response_model=Group,
+    dependencies=[Depends(require_permission("group:write"))],
 )
 async def create_group(display_name: str = Form(), db: AsyncSession = Depends(get_db)):
     group = models.Group(display_name=display_name)
@@ -33,6 +35,7 @@ async def create_group(display_name: str = Form(), db: AsyncSession = Depends(ge
     "/{group_id}",
     summary="グループを削除",
     description="指定したIDのグループを削除します。",
+    dependencies=[Depends(require_permission("group:write"))],
 )
 async def delete_group(group_id: UUID, db: AsyncSession = Depends(get_db)):
     await cruds.remove_group(db, group_id)
@@ -43,6 +46,7 @@ async def delete_group(group_id: UUID, db: AsyncSession = Depends(get_db)):
     "/{group_id}",
     summary="グループ名を更新",
     description="指定したIDのグループ名を更新します。",
+    dependencies=[Depends(require_permission("group:write"))],
 )
 async def update_group(group_id: UUID, display_name: str = Form(), db: AsyncSession = Depends(get_db)):
     await cruds.update_group(db, group_id, display_name)
@@ -53,6 +57,7 @@ async def update_group(group_id: UUID, display_name: str = Form(), db: AsyncSess
     summary="グループの部員を取得",
     description="指定したIDのグループ名を更新します。",
     response_model=list[Member],
+    dependencies=[Depends(require_permission("group:read"))],
 )
 async def get_group_members(group_id: UUID, db: AsyncSession = Depends(get_db)):
     return await cruds.get_group_members(db, group_id)
@@ -62,6 +67,7 @@ async def get_group_members(group_id: UUID, db: AsyncSession = Depends(get_db)):
     "/{group_id}/member/{member_id}",
     summary="グループに部員を追加",
     description="指定したIDのグループに部員を追加します。",
+    dependencies=[Depends(require_permission("group:write"))],
 )
 async def add_member_to_group(
     group_id: UUID,
@@ -77,6 +83,7 @@ async def add_member_to_group(
     "/{group_id}/members",
     summary="グループに部員を追加",
     description="指定したIDのグループに部員を追加します。",
+    dependencies=[Depends(require_permission("group:write"))],
 )
 async def add_members_to_group(
     group_id: UUID,
@@ -92,6 +99,7 @@ async def add_members_to_group(
     "/{group_id}/member/{member_id}",
     summary="グループから部員を削除",
     description="指定したIDのグループから部員を削除します。",
+    dependencies=[Depends(require_permission("group:write"))],
 )
 async def remove_member_from_group(
     group_id: UUID,
@@ -106,6 +114,7 @@ async def remove_member_from_group(
     "/{group_id}/members",
     summary="グループから部員を削除",
     description="指定したIDのグループから部員を削除します。",
+    dependencies=[Depends(require_permission("group:write"))],
 )
 async def remove_members_from_group(
     group_id: UUID,

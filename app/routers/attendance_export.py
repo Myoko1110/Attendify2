@@ -7,13 +7,13 @@ from starlette.responses import StreamingResponse
 
 from app.database import cruds, get_db
 from app.database.attendance_export_cruds import get_attendances_in_range, get_pre_attendances_in_range
-from app.dependencies import get_valid_session
+from app.dependencies import get_valid_session, require_permission
 from app.services.attendance_excel import MemberLite, build_attendance_xlsx_bytes
 
 router = APIRouter(
     prefix="/attendance",
     tags=["Attendance"],
-    dependencies=[Depends(get_valid_session)],
+    dependencies=[Depends(get_valid_session), Depends(require_permission("attendance:export"))],
 )
 
 

@@ -1,9 +1,5 @@
-from pathlib import Path
-
 from sqlalchemy import URL
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-
-from app.database.models import Base
 
 ASYNC_DB_URL = URL.create(
     drivername="postgresql+asyncpg",
@@ -30,5 +26,8 @@ async def get_db():
 
 
 async def migrate():
-    async with async_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    """Deprecated: prefer Alembic migrations.
+
+    Kept for local dev compatibility, but does not create tables automatically.
+    """
+    return

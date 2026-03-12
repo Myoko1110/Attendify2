@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import schemas
 from app.abc.api_error import APIErrorCode
 from app.database import cruds, get_db, models
-from app.dependencies import get_valid_session
+from app.dependencies import get_valid_session, require_permission
 from app.schemas import PreCheck, PreCheckParams
 
 router = APIRouter(prefix="/pre-check", tags=["PreCheck"],
@@ -20,6 +20,7 @@ router = APIRouter(prefix="/pre-check", tags=["PreCheck"],
     summary="事前出欠情報を取得",
     description="出欠情報を取得します。",
     response_model=list[schemas.PreAttendance],
+    dependencies=[Depends(require_permission("pre-check:read"))],
 )
 async def get_pre_attendances(member_id: UUID = None, month: str = None, pre_check_id: str = None,
                               date: datetime.date = None,
@@ -34,6 +35,7 @@ async def get_pre_attendances(member_id: UUID = None, month: str = None, pre_che
     summary="事前出欠情報を登録",
     description="出欠情報を登録します。すでに出欠情報（同じ部員・日にち）が存在する場合はエラーを返します。",
     response_model=list[schemas.PreAttendance],
+    dependencies=[Depends(require_permission("pre-check:write"))],
 )
 async def post_pre_attendances(
         pre_attendances: list[schemas.PreAttendanceParams],
@@ -56,6 +58,7 @@ async def post_pre_attendances(
     "/attendance/{pre_attendance_id}",
     summary="出欠情報を削除",
     description="出欠情報を削除します。出欠情報が存在しない場合でもエラーを返しません。",
+    dependencies=[Depends(require_permission("pre-check:write"))],
 )
 async def delete_pre_attendance(pre_attendance_id: UUID, db: AsyncSession = Depends(
     get_db)) -> schemas.AttendanceOperationalResult:
@@ -65,7 +68,8 @@ async def delete_pre_attendance(pre_attendance_id: UUID, db: AsyncSession = Depe
 
 @router.delete(
     "/attendances",
-    summary="出欠情報を削除"
+    summary="出欠情報を削除",
+    dependencies=[Depends(require_permission("pre-check:write"))],
 )
 async def bulk_delete_pre_attendances(pre_attendance_ids: list[UUID], db: AsyncSession = Depends(get_db)):
     await cruds.bulk_remove_pre_attendances(db, pre_attendance_ids)
@@ -76,6 +80,7 @@ async def bulk_delete_pre_attendances(pre_attendance_ids: list[UUID], db: AsyncS
     "/attendance/{pre_attendance_id}",
     summary="出欠情報を更新",
     description="出欠情報を更新します。出欠情報が存在しない場合でもエラーを返しません。",
+    dependencies=[Depends(require_permission("pre-check:write"))],
 )
 async def patch_pre_attendance(pre_attendance_id: UUID,
                                attendance: str,
@@ -89,6 +94,7 @@ async def patch_pre_attendance(pre_attendance_id: UUID,
     "s",
     summary="事前出欠マスタを取得",
     response_model=list[PreCheck],
+    dependencies=[Depends(require_permission("pre-check:read"))],
 )
 async def get_pre_checks(db: AsyncSession = Depends(get_db)):
     return await cruds.get_pre_checks(db)
@@ -98,6 +104,7 @@ async def get_pre_checks(db: AsyncSession = Depends(get_db)):
     "/{pre_check_id}",
     summary="事前出欠マスタを取得",
     response_model=PreCheck | None,
+    dependencies=[Depends(require_permission("pre-check:read"))],
 )
 async def get_pre_check(pre_check_id: str, db: AsyncSession = Depends(get_db)):
     return await cruds.get_pre_check_by_id(db, pre_check_id)
@@ -107,6 +114,7 @@ async def get_pre_check(pre_check_id: str, db: AsyncSession = Depends(get_db)):
     "",
     summary="事前出欠マスタを登録",
     response_model=PreCheck,
+    dependencies=[Depends(require_permission("pre-check:read"))],
 )
 async def post_pre_check(pre_check: PreCheckParams, db: AsyncSession = Depends(get_db)):
     result = await cruds.add_pre_check(db, models.PreCheck(**pre_check.model_dump()))
@@ -116,6 +124,7 @@ async def post_pre_check(pre_check: PreCheckParams, db: AsyncSession = Depends(g
 @router.delete(
     "/{pre_check_id}",
     summary="事前出欠マスタを削除",
+    dependencies=[Depends(require_permission("pre-check:write"))],
 )
 async def delete_pre_check(pre_check_id: str, db: AsyncSession = Depends(get_db)):
     await cruds.remove_pre_check(db, pre_check_id)
@@ -125,6 +134,7 @@ async def delete_pre_check(pre_check_id: str, db: AsyncSession = Depends(get_db)
 @router.patch(
     "/{pre_check_id}",
     summary="事前出欠マスタを更新",
+    dependencies=[Depends(require_permission("pre-check:write"))],
     response_model=PreCheck,
 )
 async def patch_pre_check(pre_check_id: str, start_date: datetime.date = Body(),

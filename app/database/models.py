@@ -224,3 +224,92 @@ class Session(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, default=utils.now)
 
     member = relationship("Member")
+
+
+# ----------------------------
+# RBAC models
+# ----------------------------
+
+
+class RBACPermission(Base):
+    __tablename__ = "permissions"
+
+    id = Column(Uuid, primary_key=True, default=uuid4)
+    key = Column(String(128), nullable=False, unique=True)
+    description = Column(String(256), nullable=False, default="")
+    created_at = Column(DateTime(timezone=True), default=utils.now)
+
+
+class RBACRole(Base):
+    __tablename__ = "roles"
+
+    id = Column(Uuid, primary_key=True, default=uuid4)
+    key = Column(String(64), nullable=False, unique=True)
+    display_name = Column(String(64), nullable=False)
+    description = Column(String(256), nullable=False, default="")
+    created_at = Column(DateTime(timezone=True), default=utils.now)
+
+    permissions = relationship(
+        "RBACPermission",
+        secondary="role_permissions",
+        lazy="selectin",
+    )
+
+
+class RolePermission(Base):
+    __tablename__ = "role_permissions"
+    __table_args__ = (
+        UniqueConstraint("role_id", "permission_id"),
+    )
+
+    role_id = Column(Uuid, ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True)
+    permission_id = Column(Uuid, ForeignKey("permissions.id", ondelete="CASCADE"), primary_key=True)
+
+
+class MemberRole(Base):
+    __tablename__ = "member_roles"
+    __table_args__ = (
+        UniqueConstraint("member_id", "role_id"),
+    )
+
+    member_id = Column(Uuid, ForeignKey("members.id", ondelete="CASCADE"), primary_key=True)
+    role_id = Column(Uuid, ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True)
+
+
+class GenerationRole(Base):
+    """Role assignments for a generation (=grade).
+
+    This supports "assign a role to all members of a given generation".
+    """
+
+    __tablename__ = "generation_roles"
+    __table_args__ = (
+        UniqueConstraint("generation", "role_id"),
+    )
+
+    generation = Column(Integer, primary_key=True)
+    role_id = Column(Uuid, ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True)
+
+
+class PermissionImplies(Base):
+    """Permission implication edges.
+
+    If a principal has parent_permission, they implicitly have child_permission.
+    """
+
+    __tablename__ = "permission_implies"
+    __table_args__ = (
+        UniqueConstraint("parent_permission_id", "child_permission_id"),
+    )
+
+    parent_permission_id = Column(
+        Uuid,
+        ForeignKey("permissions.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    child_permission_id = Column(
+        Uuid,
+        ForeignKey("permissions.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+

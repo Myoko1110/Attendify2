@@ -11,6 +11,8 @@ class APIErrorCode(IntEnum):
     ALREADY_EXISTS_ATTENDANCE = 200
     ALREADY_EXISTS_MEMBER_EMAIL = 201
 
+    ROLE_NOT_FOUND = 300
+
     def of(self, detail: str, status_code: int = 400) -> "APIError":
         return APIError(self, detail, status_code)
 

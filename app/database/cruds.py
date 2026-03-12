@@ -1,21 +1,23 @@
 import calendar
 import datetime
 import secrets
-from typing import Sequence
+from typing import Any, Sequence
 from uuid import UUID
 
 from sqlalchemy import between, delete, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import noload, selectinload
+from sqlalchemy.orm import aliased
 
 from app import utils
 from app.abc.part import Part
-from app.database.models import Attendance, AttendanceRate, Group, Member, MemberGroup, \
-    MembershipStatus, \
-    MembershipStatusPeriod, PreAttendance, PreCheck, Schedule, Session, WeeklyParticipation
-from app.schemas import MemberParamsOptional, MembershipStatusPeriodParams, \
+from app.database.models import Attendance, AttendanceRate, GenerationRole, Group, Member, \
+    MemberGroup, MemberRole, MembershipStatus, MembershipStatusPeriod, PermissionImplies, \
+    PreAttendance, PreCheck, RBACPermission, RBACRole, RolePermission, Schedule, Session, WeeklyParticipation
+from app.schemas import MembershipStatusPeriodParams, \
     WeeklyParticipationParams
+from app.schemas.rbac import GenerationRole as GenerationRoleSchema
 
 
 def generate_token():
@@ -239,114 +241,313 @@ async def get_members(db: AsyncSession, *, part: Part = None, generation: int = 
     return result.scalars().all()
 
 
+async def get_member_by_id(
+        db: AsyncSession,
+        member_id: UUID,
+        *,
+        include_groups: bool = False,
+        include_weekly_participation: bool = False,
+        include_status_periods: bool = False,
+) -> Member | None:
+    """MemberをIDで取得。
+
+    get_self 用。全件取得を避け、必要な関連だけ selectinload する。
+    """
+
+    stmt = select(Member).where(Member.id == member_id)
+
+    if include_groups:
+        stmt = stmt.options(selectinload(Member.groups))
+
+    if include_weekly_participation:
+        stmt = stmt.options(selectinload(Member.weekly_participations))
+
+    if include_status_periods:
+        stmt = stmt.options(
+            selectinload(Member.membership_status_periods)
+            .selectinload(MembershipStatusPeriod.status)
+        )
+
+    res = await db.execute(stmt)
+    return res.scalar_one_or_none()
+
+
 async def get_member_by_email(db: AsyncSession, email: str) -> Member | None:
     stmt = select(Member).where(Member.email == email)
     result = await db.execute(stmt)
     return result.scalar_one_or_none()
 
 
-# async def get_member_by_felica_idm(db: AsyncSession, felica_idm: str) -> Member | None:
-#     stmt = select(Member).where(Member.felica_idm == felica_idm)
-#     result = await db.execute(stmt)
-#     return result.scalar_one_or_none()
-
-
 async def get_session_by_valid_token(db: AsyncSession, token: str) -> Session | None:
+    """有効なセッショントークンから Session を取得（member もロード）。"""
     stmt = select(Session).where(Session.token == token).options(selectinload(Session.member))
     result = await db.execute(stmt)
-
     session = result.scalar_one_or_none()
     if not session:
-        return None
-
-    if session.created_at + datetime.timedelta(days=30) < utils.now():
         return None
     return session
 
 
-async def add_member(db: AsyncSession, member: Member) -> Member:
-    db.add(member)
+# ----------------------------
+# RBAC CRUDs
+# ----------------------------
 
-    # PK/DB default を確定させる（commit+refresh の代わり）
-    await db.flush()
+async def rbac_list_permissions(db: AsyncSession) -> Sequence[Any]:
+    return (await db.execute(select(RBACPermission).order_by(RBACPermission.key))).scalars().all()
 
-    # 返却する Member に関連をロードした状態にする（ここで1回だけ select）
-    stmt = (
-        select(Member)
-        .where(Member.id == member.id)
-        .options(
-            selectinload(Member.groups),
-            selectinload(Member.weekly_participations),
-            selectinload(Member.membership_status_periods).selectinload(
-                MembershipStatusPeriod.status
-            ),
-        )
+
+async def rbac_list_roles(db: AsyncSession) -> Sequence[Any]:
+    return (await db.execute(select(RBACRole).order_by(RBACRole.key))).scalars().all()
+
+
+async def rbac_get_role_permissions(db: AsyncSession, role_key: str) -> RBACRole | None:
+    """指定したrole_keyのロールをpermissions付きで返す。存在しない場合はNoneを返す。"""
+    result = await db.execute(
+        select(RBACRole)
+        .where(RBACRole.key == role_key)
+        .options(selectinload(RBACRole.permissions))
     )
-    result = await db.execute(stmt)
-    loaded = result.scalar_one()
+    return result.scalar_one_or_none()
+
+
+async def rbac_get_role(db: AsyncSession, role_key: str) -> RBACRole | None:
+    result = await db.execute(select(RBACRole).where(RBACRole.key == role_key))
+    return result.scalar_one_or_none()
+
+
+async def rbac_create_role(db: AsyncSession, *, key: str, display_name: str, description: str = "") -> RBACRole:
+    role = RBACRole(key=key, display_name=display_name, description=description)
+    db.add(role)
+    await db.commit()
+    await db.refresh(role)
+    return role
+
+
+async def rbac_update_role(db: AsyncSession, role_key: str, *, display_name: str | None = None, description: str | None = None) -> RBACRole | None:
+    role = await rbac_get_role(db, role_key)
+    if role is None:
+        return None
+    if display_name is not None:
+        role.display_name = display_name
+    if description is not None:
+        role.description = description
+    await db.commit()
+    await db.refresh(role)
+    return role
+
+
+async def rbac_delete_role(db: AsyncSession, role_key: str) -> bool:
+    role = await rbac_get_role(db, role_key)
+    if role is None:
+        return False
+    await db.delete(role)
+    await db.commit()
+    return True
+
+
+async def rbac_replace_role_permissions(db: AsyncSession, role_key: str, *, permission_keys: list[str]) -> RBACRole | None:
+    """ロールのpermissionをpermission_keysで完全置換する。ロールが存在しない場合はNoneを返す。"""
+    role = await rbac_get_role_permissions(db, role_key)
+    if role is None:
+        return None
+
+    want = set(permission_keys)
+    # permission_keysが存在するか確認
+    rows = (await db.execute(
+        select(RBACPermission.id, RBACPermission.key).where(RBACPermission.key.in_(want))
+    )).all()
+    key_to_perm = {k: pid for pid, k in rows}
+
+    missing = want - set(key_to_perm.keys())
+    if missing:
+        raise ValueError(f"Unknown permissions: {sorted(missing)}")
+
+    want_ids = set(key_to_perm.values())
+    existing_ids = {p.id for p in role.permissions}
+
+    for pid in existing_ids - want_ids:
+        await db.execute(
+            delete(RolePermission).where(
+                RolePermission.role_id == role.id,
+                RolePermission.permission_id == pid,
+            )
+        )
+
+    for pid in want_ids - existing_ids:
+        db.add(RolePermission(role_id=role.id, permission_id=pid))
 
     await db.commit()
-    return loaded
+    return await rbac_get_role_permissions(db, role_key)
 
 
-async def add_members(db: AsyncSession, members: list[Member]):
-    db.add_all(members)
-    await db.commit()
-    for m in members:
-        await db.refresh(m)
-    return members
+async def rbac_get_generation_role_keys(db: AsyncSession, generation: int) -> list[str]:
+    rows = (
+        await db.execute(
+            select(RBACRole.key)
+            .join(GenerationRole, GenerationRole.role_id == RBACRole.id)
+            .where(GenerationRole.generation == generation)
+            .order_by(RBACRole.key)
+        )
+    ).all()
+    return [r[0] for r in rows]
 
 
-async def remove_member(db: AsyncSession, member_id: UUID):
-    await db.execute(delete(Member).where(Member.id == member_id))
-    await db.commit()
+async def rbac_get_generations_role_keys(
+        db: AsyncSession,
+        *,
+        generations: list[int] | None = None,
+) -> dict[int, list[str]]:
+    stmt = (
+        select(GenerationRole.generation, RBACRole.key)
+        .join(RBACRole, RBACRole.id == GenerationRole.role_id)
+        .order_by(GenerationRole.generation, RBACRole.key)
+    )
+    if generations:
+        stmt = stmt.where(GenerationRole.generation.in_(generations))
+
+    rows = (await db.execute(stmt)).all()
+    out: dict[int, list[str]] = {}
+    for gen, key in rows:
+        out.setdefault(int(gen), []).append(key)
+    return out
 
 
-async def update_member(db: AsyncSession, member_id: UUID, m: MemberParamsOptional):
-    stmt = update(Member).where(Member.id == member_id)
-
-    if m.part is not None:
-        stmt = stmt.values(part=m.part)
-    if m.generation is not None:
-        stmt = stmt.values(generation=m.generation)
-    if m.name is not None:
-        stmt = stmt.values(name=m.name)
-    if m.name_kana is not None:
-        stmt = stmt.values(name_kana=m.name_kana)
-    if m.email is not None:
-        stmt = stmt.values(email=m.email)
-    if m.role is not None:
-        stmt = stmt.values(role=m.role)
-    if m.lecture_day is not None:
-        stmt = stmt.values(lecture_day=m.lecture_day)
-    if m.is_competition_member is not None:
-        stmt = stmt.values(is_competition_member=m.is_competition_member)
-    # if m.felica_idm is not None:
-    #     stmt = stmt.values(felica_idm=m.felica_idm)
-
-    await db.execute(stmt)
-    await db.commit()
+async def _rbac_role_ids_by_keys(db: AsyncSession, role_keys: set[str]) -> dict[str, UUID]:
+    if not role_keys:
+        return {}
+    rows = (await db.execute(
+        select(RBACRole.id, RBACRole.key).where(RBACRole.key.in_(role_keys)))).all()
+    return {k: rid for rid, k in rows}
 
 
-async def update_members_competition(db: AsyncSession, member_ids: list[UUID],
-                                     is_competition_member: bool):
-    stmt = update(Member).where(Member.id.in_(member_ids)).values(
-        is_competition_member=is_competition_member)
-    await db.execute(stmt)
-    await db.commit()
+async def rbac_replace_generation_roles(db: AsyncSession, generation: int, *,
+                                        role_keys: list[str]) -> None:
+    want = set(role_keys)
+    key_to_id = await _rbac_role_ids_by_keys(db, want)
+
+    missing = want - set(key_to_id.keys())
+    if missing:
+        raise ValueError(f"Unknown roles: {sorted(missing)}")
+
+    want_ids = set(key_to_id.values())
+    existing_rows = (await db.execute(
+        select(GenerationRole.role_id).where(GenerationRole.generation == generation))).all()
+    existing_ids = {r[0] for r in existing_rows}
+
+    for rid in existing_ids - want_ids:
+        obj = await db.get(GenerationRole, {"generation": generation, "role_id": rid})
+        if obj:
+            await db.delete(obj)
+
+    for rid in want_ids - existing_ids:
+        db.add(GenerationRole(generation=generation, role_id=rid))
 
 
-async def update_members_retired(db: AsyncSession, member_ids: list[UUID],
-                                 is_temporarily_retired: bool):
-    """指定した部員の一時引退フラグを一括更新する。"""
-    if not member_ids:
+async def rbac_replace_generations_roles_bulk(
+        db: AsyncSession,
+        *,
+        items: list[GenerationRoleSchema],
+) -> None:
+    """items: [GenerationRolesBulkItemSchema, ...] の各generationを置換。"""
+
+    want_keys: set[str] = set()
+    for item in items:
+        want_keys.update(item.role_keys)
+
+    key_to_id = await _rbac_role_ids_by_keys(db, want_keys)
+    missing = want_keys - set(key_to_id.keys())
+    if missing:
+        raise ValueError(f"Unknown roles: {sorted(missing)}")
+
+    want_by_gen: dict[int, set[UUID]] = {
+        int(item.generation): {key_to_id[k] for k in set(item.role_keys)}
+        for item in items
+    }
+
+    target_generations = list(want_by_gen.keys())
+    if not target_generations:
         return
 
-    stmt = update(Member).where(Member.id.in_(member_ids)).values(
-        is_temporarily_retired=is_temporarily_retired
+    existing_rows = (
+        await db.execute(
+            select(GenerationRole.generation, GenerationRole.role_id)
+            .where(GenerationRole.generation.in_(target_generations))
+        )
+    ).all()
+
+    existing_by_gen: dict[int, set[UUID]] = {}
+    for gen, rid in existing_rows:
+        existing_by_gen.setdefault(int(gen), set()).add(rid)
+
+    for gen in target_generations:
+        want_ids = want_by_gen.get(gen, set())
+        existing_ids = existing_by_gen.get(gen, set())
+
+        for rid in existing_ids - want_ids:
+            obj = await db.get(GenerationRole, {"generation": gen, "role_id": rid})
+            if obj:
+                await db.delete(obj)
+
+        for rid in want_ids - existing_ids:
+            db.add(GenerationRole(generation=gen, role_id=rid))
+
+
+async def rbac_get_member_role_keys(db: AsyncSession, member_id: UUID) -> list[str]:
+    rows = (
+        await db.execute(
+            select(RBACRole.key)
+            .join(MemberRole, MemberRole.role_id == RBACRole.id)
+            .where(MemberRole.member_id == member_id)
+            .order_by(RBACRole.key)
+        )
+    ).all()
+    return [r[0] for r in rows]
+
+
+async def rbac_replace_member_roles(db: AsyncSession, member_id: UUID, *,
+                                    role_keys: list[str]) -> None:
+    want = set(role_keys)
+    key_to_id = await _rbac_role_ids_by_keys(db, want)
+
+    missing = want - set(key_to_id.keys())
+    if missing:
+        raise ValueError(f"Unknown roles: {sorted(missing)}")
+
+    want_ids = set(key_to_id.values())
+
+    existing_rows = (
+        await db.execute(select(MemberRole.role_id).where(MemberRole.member_id == member_id))).all()
+    existing_ids = {r[0] for r in existing_rows}
+
+    for rid in existing_ids - want_ids:
+        obj = await db.get(MemberRole, {"member_id": member_id, "role_id": rid})
+        if obj:
+            await db.delete(obj)
+
+    for rid in want_ids - existing_ids:
+        db.add(MemberRole(member_id=member_id, role_id=rid))
+
+
+async def rbac_get_permission_implies_edges(
+        db: AsyncSession,
+        *,
+        parent_keys: list[str] | None = None,
+) -> list[tuple[str, str]]:
+    parent = aliased(RBACPermission)
+    child = aliased(RBACPermission)
+
+    stmt = (
+        select(parent.key, child.key)
+        .select_from(PermissionImplies)
+        .join(parent, parent.id == PermissionImplies.parent_permission_id)
+        .join(child, child.id == PermissionImplies.child_permission_id)
+        .order_by(parent.key, child.key)
     )
-    await db.execute(stmt)
-    await db.commit()
+    if parent_keys:
+        stmt = stmt.where(parent.key.in_(parent_keys))
+
+    rows = (await db.execute(stmt)).all()
+    return [(p, c) for p, c in rows]
 
 
 async def get_schedules(db: AsyncSession) -> list[Schedule]:
@@ -600,7 +801,8 @@ async def remove_group_members(db: AsyncSession, group_id: UUID, member_ids: lis
     await db.commit()
 
 
-async def get_pre_attendances(db: AsyncSession, *, member_id: UUID | None, month: str | None, date: datetime.date | None,
+async def get_pre_attendances(db: AsyncSession, *, member_id: UUID | None, month: str | None,
+                              date: datetime.date | None,
                               pre_check_id: str | None) -> \
         Sequence[PreAttendance]:
     stmt = select(PreAttendance)

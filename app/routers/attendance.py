@@ -9,7 +9,7 @@ from app import schemas
 from app.abc.api_error import APIErrorCode
 from app.abc.part import Part
 from app.database import async_session, cruds, get_db, models
-from app.dependencies import get_valid_session
+from app.dependencies import get_valid_session, require_permission
 from app.utils import Attendances
 
 router = APIRouter(prefix="/attendance", tags=["Attendance"],
@@ -21,6 +21,7 @@ router = APIRouter(prefix="/attendance", tags=["Attendance"],
     summary="出欠情報を取得",
     description="出欠情報を取得します。",
     response_model=list[schemas.Attendance],
+    dependencies=[Depends(require_permission("attendance:read"))],
 )
 async def get_attendances(part: Part = None, generation: int = None, date: datetime.date = None,
                           month: str = None, db: AsyncSession = Depends(get_db)):
@@ -32,12 +33,13 @@ async def get_attendances(part: Part = None, generation: int = None, date: datet
     summary="出欠情報を登録",
     description="出欠情報を登録します。すでに出欠情報（同じ部員・日にち）が存在する場合はエラーを返します。",
     response_model=schemas.Attendance,
+    dependencies=[Depends(require_permission("attendance:write"))],
 )
 async def post_attendance(
-    a: schemas.AttendancesParams = Form(),
-    db: AsyncSession = Depends(get_db),
-    background_tasks: BackgroundTasks = BackgroundTasks(),
-    overwrite: bool = Query(False, description="重複があった場合に上書きする")
+        a: schemas.AttendancesParams = Form(),
+        db: AsyncSession = Depends(get_db),
+        background_tasks: BackgroundTasks = BackgroundTasks(),
+        overwrite: bool = Query(False, description="重複があった場合に上書きする")
 ):
     attendance_params = models.Attendance(**a.model_dump())
     try:
@@ -92,12 +94,14 @@ async def recalculate_attendance_rates(updated_month: str, attendance: models.At
     "s",
     summary="出欠情報を登録",
     description="出欠情報を登録します。すでに出欠情報（同じ部員・日にち）が存在する場合はエラーを返します。",
+    dependencies=[Depends(require_permission("attendance:write"))],
 )
 async def post_attendances(
         attendances: list[schemas.AttendancesParams],
         db: AsyncSession = Depends(get_db),
         background_tasks: BackgroundTasks = BackgroundTasks(),
-        overwrite: bool = Query(False, description="重複があった場合に上書きする")) -> schemas.AttendancesOperationalResult:
+        overwrite: bool = Query(False,
+                                description="重複があった場合に上書きする")) -> schemas.AttendancesOperationalResult:
     attendance_list = [models.Attendance(**a.model_dump()) for a in attendances]
 
     if not attendance_list:
@@ -138,16 +142,19 @@ async def recalculate_attendance_rates_bulk(updated_month: str):
             return
 
         all_attendances = Attendances(
-            *[a for a in attendances if a.date.strftime("%Y-%m") == updated_month and a.member is not None and a.date in dates]
+            *[a for a in attendances if a.date.strftime(
+                "%Y-%m") == updated_month and a.member is not None and a.date in dates]
         )
 
         attendance_rates: list[models.AttendanceRate] = []
 
         # 全体
         attendance_rates.append(
-            models.AttendanceRate(target_type="all", month=updated_month, rate=all_attendances.calc(False), actual=False))
+            models.AttendanceRate(target_type="all", month=updated_month,
+                                  rate=all_attendances.calc(False), actual=False))
         attendance_rates.append(
-            models.AttendanceRate(target_type="all", month=updated_month, rate=all_attendances.calc(True), actual=True))
+            models.AttendanceRate(target_type="all", month=updated_month,
+                                  rate=all_attendances.calc(True), actual=True))
 
         # パートごと
         for part in Part:
@@ -163,10 +170,12 @@ async def recalculate_attendance_rates_bulk(updated_month: str):
         for member in set(a.member for a in all_attendances if a.member is not None):
             member_attendances = all_attendances.filter_by_member(member)
             attendance_rates.append(
-                models.AttendanceRate(target_type="member", target_id=str(member.id), month=updated_month,
+                models.AttendanceRate(target_type="member", target_id=str(member.id),
+                                      month=updated_month,
                                       rate=member_attendances.calc(False), actual=False))
             attendance_rates.append(
-                models.AttendanceRate(target_type="member", target_id=str(member.id), month=updated_month,
+                models.AttendanceRate(target_type="member", target_id=str(member.id),
+                                      month=updated_month,
                                       rate=member_attendances.calc(True), actual=True))
 
         await cruds.add_attendance_rates(db, attendance_rates)
@@ -177,6 +186,7 @@ async def recalculate_attendance_rates_bulk(updated_month: str):
     "/{attendance_id}",
     summary="出欠情報を削除",
     description="出欠情報を削除します。出欠情報が存在しない場合でもエラーを返しません。",
+    dependencies=[Depends(require_permission("attendance:write"))],
 )
 async def delete_attendance(attendance_id: UUID, db: AsyncSession = Depends(
     get_db)) -> schemas.AttendanceOperationalResult:
@@ -188,6 +198,7 @@ async def delete_attendance(attendance_id: UUID, db: AsyncSession = Depends(
     "/{attendance_id}",
     summary="出欠情報を更新",
     description="出欠情報を更新します。出欠情報が存在しない場合でもエラーを返しません。",
+    dependencies=[Depends(require_permission("attendance:write"))],
 )
 async def patch_attendance(attendance_id: UUID,
                            attendance: str, db: AsyncSession = Depends(
@@ -201,6 +212,7 @@ async def patch_attendance(attendance_id: UUID,
     summary="出欠率を取得",
     description="出欠率を取得します。出欠率は全体、パートごと、部員ごとに取得できます。",
     response_model=list[schemas.AttendanceRate],
+    dependencies=[Depends(require_permission("attendance:read"))],
 )
 async def get_attendance_rates(db: AsyncSession = Depends(get_db)):
     return await cruds.get_attendance_rates(db)
@@ -210,6 +222,7 @@ async def get_attendance_rates(db: AsyncSession = Depends(get_db)):
     "/rate/recalc",
     summary="出欠情報を再計算",
     description="出欠情報を再計算します。",
+    dependencies=[Depends(require_permission("attendance:write"))],
 )
 async def recalc_attendance(
         db: AsyncSession = Depends(get_db)) -> schemas.AttendancesOperationalResult:
@@ -222,7 +235,8 @@ async def recalc_attendance(
 
     for month in months:
         all_attendances = Attendances(
-            *[a for a in attendances if a.date.strftime("%Y-%m") == month and a.member is not None and a.date in dates])
+            *[a for a in attendances if
+              a.date.strftime("%Y-%m") == month and a.member is not None and a.date in dates])
         attendance_rates.append(
             models.AttendanceRate(target_type="all", month=month, rate=all_attendances.calc(False),
                                   actual=False))
@@ -259,9 +273,11 @@ async def recalc_attendance(
     "s",
     summary="出欠情報を一括削除",
     description="複数の出欠情報を一括で削除します。attendance_ids は削除する出欠の UUID の配列です。",
+    dependencies=[Depends(require_permission("attendance:write"))],
 )
 async def bulk_delete_attendances(attendance_ids: list[UUID], db: AsyncSession = Depends(
-    get_db), background_tasks: BackgroundTasks = BackgroundTasks()) -> schemas.AttendancesOperationalResult:
+    get_db),
+                                  background_tasks: BackgroundTasks = BackgroundTasks()) -> schemas.AttendancesOperationalResult:
     """attendance_ids に含まれる出欠を一括削除し、該当する月ごとに出席率を再計算するためのバックグラウンドタスクを登録します。
 
     DB 削除は cruds.remove_attendances で一回の DELETE クエリにまとめて行います。

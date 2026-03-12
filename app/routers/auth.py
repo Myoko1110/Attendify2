@@ -8,6 +8,8 @@ from app.abc.part import Part
 from app.database import cruds, get_db
 from app.dependencies import get_valid_session
 from app.schemas import Member
+from app.schemas.member import MemberDetailSchema, MemberGroupsSchema, MembershipStatusPeriodSchema
+from app.services import rbac
 from app.utils import settings
 
 router = APIRouter(tags=["Authentication"])
@@ -23,7 +25,7 @@ flow = Flow.from_client_secrets_file(
     "/login",
     summary="ログイン",
     description="Googleアカウントでログインします。",
-    response_model=Member,
+    response_model=MemberDetailSchema,
 )
 async def login(request: Request, code: str = Form(), state: str = Form(),
                 db: AsyncSession = Depends(get_db)):
@@ -50,16 +52,37 @@ async def login(request: Request, code: str = Form(), state: str = Form(),
     request.session["token"] = token
     request.session.pop("state")
 
-    await db.refresh(member)
+    # groups / membership_status_periods / roles を含めてロード
+    loaded = await cruds.get_member_by_id(
+        db,
+        member.id,
+        include_groups=True,
+        include_status_periods=True,
+    )
+    if loaded is not None:
+        member = loaded
 
-    return member
+    data = Member.model_validate(member).model_dump()
+    data["groups"] = MemberGroupsSchema.model_validate(member).groups or []
+    data["membership_status_periods"] = (
+        MembershipStatusPeriodSchema.model_validate(member).membership_status_periods or []
+    )
+    data["weekly_participations"] = []
+    data["generation_role_keys"] = await rbac.generation_role_keys_for_generation(db, int(member.generation))
+    data["member_role_keys"] = await rbac.member_role_keys_for_member(db, member.id)
+    data["effective_role_keys"] = await rbac.effective_role_keys_for_member(db, member.id)
+    data["effective_permission_keys"] = sorted(
+        await rbac.effective_permission_keys_for_member(db, member.id)
+    )
+
+    return MemberDetailSchema(**data)
 
 
 @router.post(
     "/login/temp",
     summary="ログイン",
     description="ログインします。",
-    response_model=Member,
+    response_model=MemberDetailSchema,
 )
 async def login_temp(request: Request, generation: int = Form(), part: Part = Form(), email: str = Form(),
                      db: AsyncSession = Depends(get_db)):
@@ -71,8 +94,30 @@ async def login_temp(request: Request, generation: int = Form(), part: Part = Fo
     request.session["token"] = token
     request.session.pop("state")
 
-    await db.refresh(member)
-    return member
+    # groups / membership_status_periods / roles を含めてロード
+    loaded = await cruds.get_member_by_id(
+        db,
+        member.id,
+        include_groups=True,
+        include_status_periods=True,
+    )
+    if loaded is not None:
+        member = loaded
+
+    data = Member.model_validate(member).model_dump()
+    data["groups"] = MemberGroupsSchema.model_validate(member).groups or []
+    data["membership_status_periods"] = (
+        MembershipStatusPeriodSchema.model_validate(member).membership_status_periods or []
+    )
+    data["weekly_participations"] = []
+    data["generation_role_keys"] = await rbac.generation_role_keys_for_generation(db, int(member.generation))
+    data["member_role_keys"] = await rbac.member_role_keys_for_member(db, member.id)
+    data["effective_role_keys"] = await rbac.effective_role_keys_for_member(db, member.id)
+    data["effective_permission_keys"] = sorted(
+        await rbac.effective_permission_keys_for_member(db, member.id)
+    )
+
+    return MemberDetailSchema(**data)
 
 
 @router.get(
