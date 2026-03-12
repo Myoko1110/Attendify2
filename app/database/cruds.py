@@ -278,6 +278,34 @@ async def get_member_by_email(db: AsyncSession, email: str) -> Member | None:
     return result.scalar_one_or_none()
 
 
+async def add_member(db: AsyncSession, member: Member) -> Member:
+    db.add(member)
+    await db.commit()
+    await db.refresh(member, ["weekly_participations"])
+    return member
+
+
+async def add_members(db: AsyncSession, members: list[Member]) -> None:
+    db.add_all(members)
+    await db.commit()
+
+
+async def update_member(db: AsyncSession, member_id: UUID, params) -> Member | None:
+    member = await get_member_by_id(db, member_id)
+    if member is None:
+        return None
+    for field, value in params.model_dump(exclude_unset=True).items():
+        setattr(member, field, value)
+    await db.commit()
+    await db.refresh(member)
+    return member
+
+
+async def remove_member(db: AsyncSession, member_id: UUID) -> None:
+    await db.execute(delete(Member).where(Member.id == member_id))
+    await db.commit()
+
+
 async def get_session_by_valid_token(db: AsyncSession, token: str) -> Session | None:
     """有効なセッショントークンから Session を取得（member もロード）。"""
     stmt = select(Session).where(Session.token == token).options(selectinload(Session.member))

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, Form
+from fastapi.responses import JSONResponse
 from google_auth_oauthlib.flow import Flow
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
@@ -8,7 +9,6 @@ from app.abc.part import Part
 from app.database import cruds, get_db
 from app.dependencies import get_valid_session
 from app.schemas import Member
-from app.schemas.member import MemberDetailSchema, MemberGroupsSchema, MembershipStatusPeriodSchema
 from app.services import rbac
 from app.utils import settings
 
@@ -21,11 +21,54 @@ flow = Flow.from_client_secrets_file(
 )
 
 
+async def _build_member_detail(db: AsyncSession, member_id) -> dict:
+    """groups / status_periods / roles をロードして dict を返す共通処理。"""
+    loaded = await cruds.get_member_by_id(
+        db,
+        member_id,
+        include_groups=True,
+        include_status_periods=True,
+    )
+    if loaded is None:
+        raise APIErrorCode.PERMISSION_DENIED.of("Member not found", 403)
+
+    data = Member.model_validate(loaded).model_dump(mode="json")
+    # selectinload 済みの属性を直接参照（model_validate 経由の lazy load を避ける）
+    data["groups"] = [
+        {"id": str(g.id), "display_name": g.display_name, "created_at": g.created_at.isoformat()}
+        for g in (loaded.groups or [])
+    ]
+    data["membership_status_periods"] = [
+        {
+            "id": str(p.id),
+            "member_id": str(p.member_id),
+            "status_id": str(p.status_id),
+            "start_date": p.start_date.isoformat(),
+            "end_date": p.end_date.isoformat() if p.end_date else None,
+            "created_at": p.created_at.isoformat(),
+            "status": {
+                "id": str(p.status.id),
+                "display_name": p.status.display_name,
+                "is_attendance_target": p.status.is_attendance_target,
+                "default_attendance": p.status.default_attendance,
+            },
+        }
+        for p in (loaded.membership_status_periods or [])
+    ]
+    data["weekly_participations"] = []
+    data["generation_role_keys"] = await rbac.generation_role_keys_for_generation(db, int(loaded.generation))
+    data["member_role_keys"] = await rbac.member_role_keys_for_member(db, loaded.id)
+    data["effective_role_keys"] = await rbac.effective_role_keys_for_member(db, loaded.id)
+    data["effective_permission_keys"] = sorted(
+        await rbac.effective_permission_keys_for_member(db, loaded.id)
+    )
+    return data
+
+
 @router.post(
     "/login",
     summary="ログイン",
     description="Googleアカウントでログインします。",
-    response_model=MemberDetailSchema,
 )
 async def login(request: Request, code: str = Form(), state: str = Form(),
                 db: AsyncSession = Depends(get_db)):
@@ -50,39 +93,15 @@ async def login(request: Request, code: str = Form(), state: str = Form(),
 
     token = await cruds.create_session(db, member)
     request.session["token"] = token
-    request.session.pop("state")
+    request.session.pop("state", None)
 
-    # groups / membership_status_periods / roles を含めてロード
-    loaded = await cruds.get_member_by_id(
-        db,
-        member.id,
-        include_groups=True,
-        include_status_periods=True,
-    )
-    if loaded is not None:
-        member = loaded
-
-    data = Member.model_validate(member).model_dump()
-    data["groups"] = MemberGroupsSchema.model_validate(member).groups or []
-    data["membership_status_periods"] = (
-        MembershipStatusPeriodSchema.model_validate(member).membership_status_periods or []
-    )
-    data["weekly_participations"] = []
-    data["generation_role_keys"] = await rbac.generation_role_keys_for_generation(db, int(member.generation))
-    data["member_role_keys"] = await rbac.member_role_keys_for_member(db, member.id)
-    data["effective_role_keys"] = await rbac.effective_role_keys_for_member(db, member.id)
-    data["effective_permission_keys"] = sorted(
-        await rbac.effective_permission_keys_for_member(db, member.id)
-    )
-
-    return MemberDetailSchema(**data)
+    return JSONResponse(await _build_member_detail(db, member.id))
 
 
 @router.post(
     "/login/temp",
     summary="ログイン",
     description="ログインします。",
-    response_model=MemberDetailSchema,
 )
 async def login_temp(request: Request, generation: int = Form(), part: Part = Form(), email: str = Form(),
                      db: AsyncSession = Depends(get_db)):
@@ -92,32 +111,9 @@ async def login_temp(request: Request, generation: int = Form(), part: Part = Fo
 
     token = await cruds.create_session(db, member)
     request.session["token"] = token
-    request.session.pop("state")
+    request.session.pop("state", None)
 
-    # groups / membership_status_periods / roles を含めてロード
-    loaded = await cruds.get_member_by_id(
-        db,
-        member.id,
-        include_groups=True,
-        include_status_periods=True,
-    )
-    if loaded is not None:
-        member = loaded
-
-    data = Member.model_validate(member).model_dump()
-    data["groups"] = MemberGroupsSchema.model_validate(member).groups or []
-    data["membership_status_periods"] = (
-        MembershipStatusPeriodSchema.model_validate(member).membership_status_periods or []
-    )
-    data["weekly_participations"] = []
-    data["generation_role_keys"] = await rbac.generation_role_keys_for_generation(db, int(member.generation))
-    data["member_role_keys"] = await rbac.member_role_keys_for_member(db, member.id)
-    data["effective_role_keys"] = await rbac.effective_role_keys_for_member(db, member.id)
-    data["effective_permission_keys"] = sorted(
-        await rbac.effective_permission_keys_for_member(db, member.id)
-    )
-
-    return MemberDetailSchema(**data)
+    return JSONResponse(await _build_member_detail(db, member.id))
 
 
 @router.get(
