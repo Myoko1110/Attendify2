@@ -7,3 +7,8 @@ openpyxl
 
 sqlalchemy
 nanoid
+
+itsdangerous
+asyncpg
+python-multipart
+google_auth_oauthlib

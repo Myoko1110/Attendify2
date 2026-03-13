@@ -22,6 +22,21 @@ import sys
 import traceback
 from pathlib import Path
 from uuid import uuid4
+import io
+
+# Force UTF-8 for stdout/stderr to avoid UnicodeEncodeError on terminals with ASCII locale
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    if hasattr(sys.stdout, "buffer"):
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", line_buffering=True)
+    if hasattr(sys.stderr, "buffer"):
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", line_buffering=True)
+
+# Hint for DB driver / child processes
+os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+os.environ.setdefault("PGCLIENTENCODING", "utf8")
 
 # Ensure project root is on sys.path
 ROOT = Path(__file__).resolve().parents[1]
@@ -118,6 +133,12 @@ def main() -> int:
     eng = create_engine(url)
 
     with eng.connect() as c:
+        try:
+            # Ensure PostgreSQL client encoding is UTF8 to avoid UnicodeEncodeError from driver
+            c.execute(text("SET client_encoding TO 'UTF8'"))
+        except Exception:
+            # If the server doesn't allow this or it fails, ignore and continue
+            pass
         c.execute(text("select 1"))
 
     with Session(eng) as db:
