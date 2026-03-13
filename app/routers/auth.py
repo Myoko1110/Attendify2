@@ -51,6 +51,7 @@ async def _build_member_detail(db: AsyncSession, member_id) -> dict:
                 "display_name": p.status.display_name,
                 "is_attendance_target": p.status.is_attendance_target,
                 "default_attendance": p.status.default_attendance,
+                "is_pre_attendance_excluded": p.status.is_pre_attendance_excluded,
             },
         }
         for p in (loaded.membership_status_periods or [])
