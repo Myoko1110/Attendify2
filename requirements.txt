@@ -12,3 +12,6 @@ itsdangerous
 asyncpg
 python-multipart
 google_auth_oauthlib
+
+tzdata
+apscheduler

@@ -13,6 +13,11 @@ class APIErrorCode(IntEnum):
 
     ROLE_NOT_FOUND = 300
 
+    SCHEDULE_NOT_FOUND = 400
+    INVALID_SCHEDULE = 401
+
+    FELICA_NOT_FOUND = 500
+
     def of(self, detail: str, status_code: int = 400) -> "APIError":
         return APIError(self, detail, status_code)
 

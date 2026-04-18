@@ -4,7 +4,7 @@ from uuid import uuid4
 
 import nanoid
 from sqlalchemy import Boolean, Column, Date, DateTime, Double, ForeignKey, Integer, JSON, String, \
-    TypeDecorator, UniqueConstraint, Uuid
+    TypeDecorator, UniqueConstraint, Uuid, Time
 from sqlalchemy.orm import declarative_base, relationship
 
 from app import utils
@@ -51,11 +51,12 @@ class Member(Base):
     name_kana = Column(String(64), nullable=False)
     email = Column(String(64), unique=True, nullable=True)
     role = Column(EnumType(enum_class=Role), nullable=True)
+    studentid = Column(Integer, unique=True, nullable=True)
 
     lecture_day = Column(JSON, nullable=False, default=[])
     is_competition_member = Column(Boolean, nullable=False, default=False)
 
-    # felica_idm = Column(String(23), nullable=True)
+    felica_idm = Column(String(23), nullable=True)
 
     groups = relationship("Group", secondary="member_groups", back_populates="members")
     weekly_participations = relationship("WeeklyParticipation", back_populates="member",
@@ -151,11 +152,27 @@ class Attendance(Base):
     date = Column(Date, nullable=False, index=True)
     member_id = Column(Uuid, ForeignKey("members.id", ondelete="SET NULL"), nullable=True)
     attendance = Column(String(64), nullable=False)
+
+    first_tap_at = Column(DateTime(timezone=True), nullable=True)
+    last_tap_at = Column(DateTime(timezone=True), nullable=True)
+
     created_at = Column(DateTime(timezone=True), nullable=False, default=utils.now)
     updated_at = Column(DateTime(timezone=True), nullable=False, onupdate=utils.now,
                         default=utils.now)
 
-    member = relationship("Member", lazy="selectin")
+    member = relationship("Member", lazy="select")
+
+
+class AttendanceLog(Base):
+    __tablename__ = "attendance_logs"
+
+    id = Column(Uuid, primary_key=True, default=uuid4)
+    member_id = Column(Uuid, ForeignKey("members.id", ondelete="CASCADE"), nullable=False)
+
+    timestamp = Column(DateTime(timezone=True), nullable=False, default=utils.now)
+    terminal_member_id = Column(Uuid, ForeignKey("members.id", ondelete="SET NULL"), nullable=False)
+
+    member = relationship("Member", foreign_keys=[member_id], lazy="selectin")
 
 
 class AttendanceRate(Base):
@@ -181,6 +198,10 @@ class Schedule(Base):
 
     date = Column(Date, nullable=False, primary_key=True)
     type = Column(EnumType(enum_class=ScheduleType), nullable=False)
+
+    start_time = Column(Time, nullable=True)
+    end_time = Column(Time, nullable=True)
+
     generations = Column(JSON, nullable=True)
     groups = Column(JSON, nullable=True)
     exclude_groups = Column(JSON, nullable=True)

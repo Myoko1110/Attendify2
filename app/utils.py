@@ -1,6 +1,7 @@
 import datetime
 from decimal import Decimal
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import yaml
 
@@ -10,6 +11,9 @@ from app.schemas import Member
 
 def now() -> datetime.datetime:
     return datetime.datetime.now(datetime.timezone.utc)
+
+
+JST = ZoneInfo("Asia/Tokyo")
 
 
 class Month:
@@ -79,23 +83,56 @@ class Attendances(list[schemas.Attendance]):
         return Attendances(*[a for a in self if a.date == date])
 
 
+def determine_attendance_status_utc(
+        now_utc: datetime.datetime,
+        start_time: datetime.time,
+        end_time: datetime.time,
+        buffer_min: int = 0,
+        existing_status: str = None
+) -> str:
+    """
+    DBの時刻(JST/naive)をJSTとして解釈し、UTCの現在時刻と比較します。
+    """
+    # 1. 現在時刻をJSTに変換（比較をJSTで統一するため）
+    now_jst = now_utc.astimezone(JST)
+    today_jst = now_jst.date()
+
+    # 2. DBのnaiveな時刻を「JSTのawareなdatetime」として組み立てる
+    # .replace(tzinfo=JST) を使うことで、JSTとして扱われる
+    start_dt_jst = datetime.datetime.combine(today_jst, start_time).replace(tzinfo=JST) + datetime.timedelta(minutes=buffer_min)
+    end_dt_jst = datetime.datetime.combine(today_jst, end_time).replace(tzinfo=JST) - datetime.timedelta(minutes=buffer_min)
+
+    # 3. JST同士で比較（これならズレもTypeErrorも起きません）
+    is_late = now_jst > start_dt_jst
+    is_early = now_jst < end_dt_jst
+
+    # --- 以下、ステータス決定ロジック ---
+    if existing_status is None:
+        return "遅刻" if is_late else "出席"
+
+    was_late = "遅刻" in existing_status
+    if was_late and is_early: return "遅早"
+    if was_late: return "遅刻"
+    if is_early: return "早退"
+    return "出席"
+
 
 attendance_score = {
-  '出席': 100,
-  '欠席': 0,
-  '講習': None,
-  '遅刻': 50,
-  '早退': 50,
-  '無欠': 0,
+    '出席': 100,
+    '欠席': 0,
+    '講習': None,
+    '遅刻': 50,
+    '早退': 50,
+    '無欠': 0,
 }
 
 actual_attendance_score = {
-  '出席': 100,
-  '欠席': 0,
-  '講習': 0,
-  '遅刻': 50,
-  '早退': 50,
-  '無欠': 0,
+    '出席': 100,
+    '欠席': 0,
+    '講習': 0,
+    '遅刻': 50,
+    '早退': 50,
+    '無欠': 0,
 }
 
 
@@ -103,6 +140,12 @@ def load_setting_data():
     yaml_path = Path("settings.yml")
     with yaml_path.open(encoding="utf-8") as f:
         return yaml.safe_load(f)
+
+
+def save_setting_data(data):
+    yaml_path = Path("settings.yml")
+    with yaml_path.open("w", encoding="utf-8") as f:
+        yaml.safe_dump(data, f, allow_unicode=True, sort_keys=False)
 
 
 settings = load_setting_data()
