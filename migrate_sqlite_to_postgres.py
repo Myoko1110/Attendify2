@@ -155,5 +155,4 @@ if __name__ == "__main__":
         Schedule,
         Session,
     ]:
-        print(model)
         migrate(model)

@@ -28,6 +28,10 @@ PERMISSIONS: list[PermissionDef] = [
     PermissionDef("attendance:write", "出欠の操作"),
     PermissionDef("attendance:read", "出欠の読み込み"),
 
+    # attendance-log permissions
+    PermissionDef("attendance-log:read", "出席ログの読み込み"),
+    PermissionDef("attendance-log:write", "出席ログの操作"),
+
     PermissionDef("member:write", "部員の操作"),
     PermissionDef("member:read", "部員の読み込み"),
     PermissionDef("member:self", "自分の読み込み"),
@@ -51,6 +55,7 @@ PERMISSION_IMPLIES: list[tuple[str, str]] = [
     ("dashboard:access", "schedule:read"),
     ("dashboard:access", "group:read"),
     ("dashboard:access", "pre-check:read"),
+    ("dashboard:write", "attendance-log:read"),
 
     ("dashboard:write", "dashboard:read"),
     ("dashboard:write", "attendance:write"),
@@ -58,8 +63,10 @@ PERMISSION_IMPLIES: list[tuple[str, str]] = [
     ("dashboard:write", "schedule:write"),
     ("dashboard:write", "group:write"),
     ("dashboard:write", "pre-check:write"),
+    ("dashboard:write", "attendance-log:write"),
 
     ("attendance:write", "attendance:read"),
+    ("attendance-log:write", "attendance-log:read"),
     ("member:write", "member:read"),
     ("member:read", "member:self"),
     ("schedule:write", "schedule:read"),

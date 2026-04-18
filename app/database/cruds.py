@@ -12,9 +12,11 @@ from sqlalchemy.orm import aliased
 
 from app import utils
 from app.abc.part import Part
-from app.database.models import Attendance, AttendanceRate, GenerationRole, Group, Member, \
+from app.database.models import Attendance, AttendanceLog, AttendanceRate, GenerationRole, Group, \
+    Member, \
     MemberGroup, MemberRole, MembershipStatus, MembershipStatusPeriod, PermissionImplies, \
-    PreAttendance, PreCheck, RBACPermission, RBACRole, RolePermission, Schedule, Session, WeeklyParticipation
+    PreAttendance, PreCheck, RBACPermission, RBACRole, RolePermission, Schedule, Session, \
+    WeeklyParticipation
 from app.schemas import MembershipStatusPeriodParams, \
     WeeklyParticipationParams
 from app.schemas.rbac import GenerationRole as GenerationRoleSchema
@@ -49,6 +51,12 @@ async def get_attendances(db: AsyncSession, *, part: Part = None, generation: in
 
     result = await db.execute(stmt)
     return [r for r in result.scalars().all()]
+
+
+async def get_attendance(db: AsyncSession, member_id: UUID, date: datetime.date) -> Attendance | None:
+    stmt = select(Attendance).where(Attendance.member_id == member_id, Attendance.date == date)
+    res = await db.execute(stmt)
+    return res.scalar_one_or_none()
 
 
 async def add_attendance(db: AsyncSession, attendance: Attendance,
@@ -212,6 +220,75 @@ async def add_attendance_rates(db: AsyncSession, attendance_rates: list[Attendan
     await db.commit()
 
 
+async def get_attendance_logs(db: AsyncSession, *, member_id: UUID | None = None,
+                              terminal_member_id: UUID | None = None,
+                              start: datetime.datetime | None = None,
+                              end: datetime.datetime | None = None,
+                              limit: int | None = None, offset: int | None = None) -> Sequence[
+    AttendanceLog]:
+    stmt = select(AttendanceLog)
+
+    if member_id is not None:
+        stmt = stmt.where(AttendanceLog.member_id == member_id)
+
+    if terminal_member_id is not None:
+        stmt = stmt.where(AttendanceLog.terminal_member_id == terminal_member_id)
+
+    if start is not None:
+        stmt = stmt.where(AttendanceLog.timestamp >= start)
+
+    if end is not None:
+        stmt = stmt.where(AttendanceLog.timestamp <= end)
+
+    if limit is not None:
+        stmt = stmt.limit(limit)
+
+    if offset is not None:
+        stmt = stmt.offset(offset)
+
+    result = await db.execute(stmt)
+    return result.scalars().all()
+
+
+async def get_attendance_log_by_id(db: AsyncSession, log_id: UUID) -> AttendanceLog | None:
+    stmt = select(AttendanceLog).where(AttendanceLog.id == log_id)
+    res = await db.execute(stmt)
+    return res.scalar_one_or_none()
+
+
+async def add_attendance_log(db: AsyncSession, attendance_log: AttendanceLog) -> AttendanceLog:
+    db.add(attendance_log)
+    await db.commit()
+    await db.refresh(attendance_log)
+    return attendance_log
+
+
+async def add_attendance_logs(db: AsyncSession, attendance_logs: list[AttendanceLog]) -> list[
+    AttendanceLog]:
+    if not attendance_logs:
+        return []
+    db.add_all(attendance_logs)
+    await db.commit()
+    for l in attendance_logs:
+        await db.refresh(l)
+    return attendance_logs
+
+
+async def remove_attendance_log(db: AsyncSession, log_id: UUID):
+    await db.execute(delete(AttendanceLog).where(AttendanceLog.id == log_id))
+    await db.commit()
+
+
+async def remove_attendance_logs(db: AsyncSession, log_ids: list[UUID]):
+    if not log_ids:
+        return []
+    stmt = delete(AttendanceLog).where(AttendanceLog.id.in_(log_ids)).returning(AttendanceLog.id)
+    result = await db.execute(stmt)
+    rows = result.all()
+    await db.commit()
+    return rows
+
+
 async def get_members(db: AsyncSession, *, part: Part = None, generation: int = None,
                       include_groups: bool = False, include_weekly_participation: bool = False,
                       include_status_periods: bool = False) \
@@ -278,6 +355,17 @@ async def get_member_by_email(db: AsyncSession, email: str) -> Member | None:
     return result.scalar_one_or_none()
 
 
+async def get_member_by_felica_idm(db: AsyncSession, felica_idm: str) -> Member | None:
+    stmt = select(Member).where(Member.felica_idm == felica_idm)
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
+
+async def get_member_by_studentid(db: AsyncSession, studentid: int) -> Member | None:
+    stmt = select(Member).where(Member.studentid == studentid)
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
 async def add_member(db: AsyncSession, member: Member) -> Member:
     db.add(member)
     await db.commit()
@@ -343,7 +431,8 @@ async def rbac_get_role(db: AsyncSession, role_key: str) -> RBACRole | None:
     return result.scalar_one_or_none()
 
 
-async def rbac_create_role(db: AsyncSession, *, key: str, display_name: str, description: str = "") -> RBACRole:
+async def rbac_create_role(db: AsyncSession, *, key: str, display_name: str,
+                           description: str = "") -> RBACRole:
     role = RBACRole(key=key, display_name=display_name, description=description)
     db.add(role)
     await db.commit()
@@ -351,7 +440,8 @@ async def rbac_create_role(db: AsyncSession, *, key: str, display_name: str, des
     return role
 
 
-async def rbac_update_role(db: AsyncSession, role_key: str, *, display_name: str | None = None, description: str | None = None) -> RBACRole | None:
+async def rbac_update_role(db: AsyncSession, role_key: str, *, display_name: str | None = None,
+                           description: str | None = None) -> RBACRole | None:
     role = await rbac_get_role(db, role_key)
     if role is None:
         return None
@@ -373,7 +463,8 @@ async def rbac_delete_role(db: AsyncSession, role_key: str) -> bool:
     return True
 
 
-async def rbac_replace_role_permissions(db: AsyncSession, role_key: str, *, permission_keys: list[str]) -> RBACRole | None:
+async def rbac_replace_role_permissions(db: AsyncSession, role_key: str, *,
+                                        permission_keys: list[str]) -> RBACRole | None:
     """ロールのpermissionをpermission_keysで完全置換する。ロールが存在しない場合はNoneを返す。"""
     role = await rbac_get_role_permissions(db, role_key)
     if role is None:
@@ -583,6 +674,11 @@ async def get_schedules(db: AsyncSession) -> list[Schedule]:
     return [r[0] for r in result.all()]
 
 
+async def get_schedule(db: AsyncSession, date: datetime.date) -> Schedule | None:
+    result = await db.execute(select(Schedule).where(Schedule.date == date))
+    return result.scalar_one_or_none()
+
+
 async def add_schedule(db: AsyncSession, schedule: Schedule):
     # 後方互換: `is_pre_attendance_target` が直接指定されている場合はそれを優先。
     # それ以外は新フィールド `is_pre_attendance_excluded` を使い、target はその否定として保存する。
@@ -597,6 +693,8 @@ async def add_schedule(db: AsyncSession, schedule: Schedule):
         exclude_groups=schedule.exclude_groups,
         generations=schedule.generations,
         is_pre_attendance_target=target,
+        start_time=schedule.start_time,
+        end_time=schedule.end_time,
     ).on_conflict_do_update(
         index_elements=["date"],
         set_={
@@ -605,6 +703,8 @@ async def add_schedule(db: AsyncSession, schedule: Schedule):
             "exclude_groups": schedule.exclude_groups,
             "generations": schedule.generations,
             "is_pre_attendance_target": target,
+            "start_time": schedule.start_time,
+            "end_time": schedule.end_time,
         },
     )
     await db.execute(stmt)
@@ -963,3 +1063,75 @@ async def update_pre_check(db: AsyncSession, pre_check_id: str,
     pre_check = await get_pre_check_by_id(db, pre_check_id)
 
     return pre_check
+
+
+async def auto_insert_daily_attendances(db: AsyncSession, date: datetime.date):
+    """指定日の出欠を未登録の部員について自動挿入する。
+
+    ロジック:
+    - 指定日の Schedule がなければ何もしない。
+    - Schedule.type == ScheduleType.WEEKDAY の場合、各部員の WeeklyParticipation を参照し、
+      当日の weekday に対して is_active が True なら 'present'、それ以外は 'absent'.
+    - Schedule.type が他の場合は全員 'absent'.
+    - 既に Attendance レコードが存在する member はスキップ。
+    - まとめて cruds.add_attendances に渡して挿入する。
+
+    戻り値: 挿入した Attendance のリスト（cruds.add_attendances の戻り）
+    """
+    from app.abc.schedule_type import ScheduleType
+    # 1. スケジュール取得
+    schedule = await get_schedule(db, date)
+    if schedule is None:
+        return []
+
+    # 2. 全部員取得（weekly participation をロード）
+    members = await get_members(db, include_weekly_participation=True)
+
+    # 3. 既存の出欠を取得して member_id の集合を作る
+    existing = await get_attendances(db, date=date, member=True)
+    existing_member_ids = {a.member_id for a in existing if a.member_id is not None}
+
+    attendances_to_add = []
+
+    weekday = date.weekday()  # 0=Mon
+
+    for m in members:
+        # skip if attendance already exists
+        if m.id in existing_member_ids:
+            continue
+
+        # find weekly participation for this weekday
+        wp = None
+        for r in getattr(m, "weekly_participations", []):
+            if r.weekday == weekday:
+                wp = r
+                break
+
+        if schedule.type == ScheduleType.WEEKDAY:
+            if wp is not None and getattr(wp, "is_active", False):
+                # 週間参加情報の default_attendance が「講習」の場合のみ '講習' を登録し、それ以外は欠席とする
+                da = getattr(wp, "default_attendance", None)
+                status = da if da == "講習" else "欠席"
+            else:
+                status = "欠席"
+        else:
+            status = "欠席"
+
+        attendance = Attendance(
+            date=date,
+            member_id=m.id,
+            attendance=status,
+        )
+        attendances_to_add.append(attendance)
+
+    if not attendances_to_add:
+        return []
+
+    try:
+        inserted = await add_attendances(db, attendances_to_add, overwrite=False)
+        return inserted
+    except Exception:
+        # 失敗しても処理を止めない。ただしログは残す。
+        import logging
+        logging.exception("auto_insert_daily_attendances failed for date=%s", date)
+        return []

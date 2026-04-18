@@ -49,16 +49,12 @@ async def effective_permission_keys_for_member(db: AsyncSession, member_id: UUID
     if not role_ids:
         return set()
 
-    print(role_ids)
-
     perm_ids = set(
         r[0]
         for r in (
             await db.execute(select(RolePermission.permission_id).where(RolePermission.role_id.in_(role_ids)))
         ).all()
     )
-
-    print(perm_ids)
 
     if not perm_ids:
         return set()

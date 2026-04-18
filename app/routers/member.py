@@ -303,7 +303,7 @@ async def get_self(
 
     return MemberDetailSchema(**data)
 
-"""
+
 @router.get(
     "/idm/{felica_idm}",
     summary="FelicaのIDmから部員を取得",
@@ -317,9 +317,7 @@ async def get_by_felica_idm(
     include_status_periods: bool = False,
     db: AsyncSession = Depends(get_db),
 ) -> MemberDetailSchema | None:
-    print(felica_idm)
     member = await cruds.get_member_by_felica_idm(db, felica_idm)
-    print(member)
     if member is None:
         return None
 
@@ -381,7 +379,7 @@ async def get_by_felica_idm(
     )
 
     return MemberDetailSchema(**data)
-"""
+
 
 @router.post(
     "",

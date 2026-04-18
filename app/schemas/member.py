@@ -26,9 +26,10 @@ class Member(BaseModel):
     name_kana: str
     email: str | None
     role: Role
+    studentid: int | None
     lecture_day: list[str]
     is_competition_member: bool
-    # felica_idm: str | None
+    felica_idm: str | None
 
     class Config:
         from_attributes = True
@@ -41,9 +42,10 @@ class MemberParams(BaseModel):
     name_kana: str
     email: typing.Optional[str] = None
     role: Role
+    studentid: int | None = None
     lecture_day: list[str] = Field(default_factory=list)
     is_competition_member: bool = False
-    # felica_idm: str | None = None
+    felica_idm: str | None = None
 
 
 class MemberParamsOptional(BaseModel):
@@ -53,9 +55,10 @@ class MemberParamsOptional(BaseModel):
     name_kana: str | None = None
     email: str | None = None
     role: Role | None = None
+    studentid: int | None = None
     lecture_day: list[str] | None = None
     is_competition_member: bool | None = None
-    # felica_idm: str | None = None
+    felica_idm: str | None = None
 
 
 class MemberOperationalResult(BaseModel):
@@ -134,3 +137,4 @@ class MemberDetailSchema(
     effective_role_keys: list[str] = Field(default_factory=list)
     # RBAC permission keys (transitive closure)
     effective_permission_keys: list[str] = Field(default_factory=list)
+
