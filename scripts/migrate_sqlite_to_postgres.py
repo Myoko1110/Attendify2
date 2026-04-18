@@ -217,7 +217,6 @@ def migrate_members(sqlite_conn: sqlite3.Connection, db: Session, verbose: bool)
                 name=row.get("name"),
                 name_kana=row.get("name_kana"),
                 email=email,
-                role=parse_enum(Role, row.get("role")),
                 lecture_day=parse_json_value(row.get("lecture_day")) or [],
                 is_competition_member=bool(row.get("is_competition_member")),
             )
