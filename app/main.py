@@ -95,7 +95,7 @@ async def get_db():
 @app.get(
     "/api/scheduler/status",
     summary="スケジューラの状態を確認",
-    dependencies=[Depends(require_permission("attendance_log"))],
+    dependencies=[Depends(require_permission("attendance-log:read"))],
 )
 async def get_scheduler_status():
     scheduler = getattr(app.state, "scheduler", None)
@@ -112,7 +112,7 @@ async def get_scheduler_status():
 @app.post(
     "/api/scheduler/start",
     summary="スケジューラを開始",
-    dependencies=[Depends(require_permission("attendance_log"))],
+    dependencies=[Depends(require_permission("attendance-log:write"))],
 )
 async def start_scheduler():
     return await _ensure_scheduler_started()
@@ -121,7 +121,7 @@ async def start_scheduler():
 @app.post(
     "/api/scheduler/stop",
     summary="スケジューラを停止",
-    dependencies=[Depends(require_permission("attendance_log"))],
+    dependencies=[Depends(require_permission("attendance-log:write"))],
 )
 async def stop_scheduler():
     return await _ensure_scheduler_stopped()

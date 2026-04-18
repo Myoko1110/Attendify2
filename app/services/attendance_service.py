@@ -17,6 +17,6 @@ async def auto_insert_daily_attendances():
         try:
             inserted = await cruds.auto_insert_daily_attendances(db, today)
             print(inserted)
-            logger.info("auto_insert_daily_attendances inserted=%d for date=%s", len(inserted), today)
+            print(f"auto_insert_daily_attendances inserted={len(inserted)} for date={today}")
         except Exception:
             logger.exception("auto_insert_daily_attendances failed for date=%s", today)

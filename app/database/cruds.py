@@ -1084,6 +1084,9 @@ async def auto_insert_daily_attendances(db: AsyncSession, date: datetime.date):
     if schedule is None:
         return []
 
+    if not schedule.start_time or not schedule.end_time:
+        return []
+
     # 2. 全部員取得（weekly participation をロード）
     members = await get_members(db, include_weekly_participation=True)
 

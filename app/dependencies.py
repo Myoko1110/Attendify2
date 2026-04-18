@@ -24,6 +24,7 @@ def require_permission(permission_key: str):
         db: AsyncSession = Depends(get_db),
     ) -> Session:
         keys = await rbac.effective_permission_keys_for_member(db, session.member_id)
+        print(keys)
         if permission_key in keys:
             return session
         raise APIErrorCode.PERMISSION_DENIED.of("Permission denied", 403)

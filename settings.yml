@@ -2,7 +2,7 @@ REDIRECT_URI: http://localhost:3039/login
 ORIGINS:
 - http://localhost:3039
 DEBUG: true
-AUTO_INSERT_TIME: '23:16'
+AUTO_INSERT_TIME: '21:55'
 SCHEDULER_ENABLED: true
 grade:
   senior2:
