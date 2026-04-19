@@ -1049,7 +1049,7 @@ async def get_pre_checks(db: AsyncSession) -> Sequence[PreAttendance]:
 async def get_pre_check_by_id(db: AsyncSession, pre_check_id: str) -> PreCheck | None:
     stmt = select(PreCheck).where(PreCheck.id == pre_check_id)
     result = await db.execute(stmt)
-    return res.scalar_one_or_none()
+    return result.scalar_one_or_none()
 
 
 async def add_pre_check(db: AsyncSession, pre_checks: PreCheck):
