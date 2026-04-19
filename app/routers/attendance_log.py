@@ -12,7 +12,7 @@ from app.abc.api_error import APIErrorCode
 from app.database import cruds, get_db, models
 from app.dependencies import get_valid_session, require_permission
 from app.schemas import AttendanceLogWithAttendance, Session
-from app.utils import determine_attendance_status_utc
+from app.utils import JST
 
 router = APIRouter(prefix="/attendance-log", tags=["AttendanceLog"],
                    dependencies=[Depends(get_valid_session)])
@@ -45,6 +45,10 @@ async def get_attendance_log(attendance_log_id: UUID, db: AsyncSession = Depends
     return await cruds.get_attendance_log_by_id(db, attendance_log_id)
 
 
+def _is_before(time_point: datetime.datetime, boundary: datetime.datetime) -> bool:
+    return time_point < boundary
+
+
 @router.post(
     "",
     summary="出席ログを登録",
@@ -56,68 +60,88 @@ async def post_attendance_log(member_id: UUID = Body(),
                               session: Session = Depends(get_valid_session),
                               db: AsyncSession = Depends(get_db)):
     now = utils.now()
+    now_jst = now.astimezone(JST)
+    today_jst = now_jst.date()
     jst_date = now.astimezone(ZoneInfo("Asia/Tokyo")).date()
 
-    # 1. 必要なデータの取得（スケジュールと既存出欠）
     schedule = await cruds.get_schedule(db, jst_date)
-
     if not schedule:
         raise APIErrorCode.SCHEDULE_NOT_FOUND.of(
             f"Schedule for {jst_date} is not registered.", 404
         )
-
     if not schedule.start_time or not schedule.end_time:
         raise APIErrorCode.INVALID_SCHEDULE.of(
             "Start/End time is not set for this schedule.", 400
         )
 
-    attendance = await cruds.get_attendance(db, member_id, jst_date)
+    start_dt = datetime.datetime.combine(today_jst, schedule.start_time).replace(tzinfo=JST)
+    end_dt = datetime.datetime.combine(today_jst, schedule.end_time).replace(tzinfo=JST)
 
-    # 2. ステータスの判定
-    new_status = determine_attendance_status_utc(
-        now_utc=now,
-        start_time=schedule.start_time,
-        end_time=schedule.end_time,
-        existing_status=attendance.attendance if attendance else None
+    existing_attendance = await cruds.get_attendance(db, member_id, jst_date)
+    if existing_attendance:
+        raise APIErrorCode.ALREADY_EXISTS_ATTENDANCE.of("Attendance already exists", 409)
+
+    attendance_logs = await cruds.get_attendance_logs(
+        member_id=member_id,
+        date=today_jst,
+        limit=1,
+        db=db,
     )
+    first_tap_at = attendance_logs[0].timestamp.astimezone(JST) if attendance_logs else None
 
-    # 3. Attendanceレコードの準備 (Upsert)
-    if not attendance:
-        attendance = models.Attendance(
-            member_id=member_id,
-            date=jst_date,
-            attendance=new_status,
-            first_tap_at=now,
-        )
-        db.add(attendance)
+    # 1回目なし
+    if first_tap_at is None:
+        if _is_before(now_jst, start_dt):
+            new_status = "出席"
+        elif _is_before(now_jst, end_dt):
+            new_status = "遅刻"
+        else:
+            new_status = "欠席"
+    # 1回目あり
     else:
-        attendance.attendance = new_status
-        attendance.last_tap_at = now
+        if _is_before(now_jst, start_dt):
+            raise APIErrorCode.INVALID_CHECK_OUT_TIME.of(
+                "Second tap before start time is invalid.", 409
+            )
+        elif _is_before(now_jst, end_dt):
+            new_status = "早退" if _is_before(first_tap_at, start_dt) else "遅早"
+            attendance = models.Attendance(
+                date=today_jst,
+                member_id=member_id,
+                attendance=new_status,
+                first_tap_at=attendance_logs[0].timestamp,
+                last_tap_at=now,
+            )
+            db.add(attendance)
+        else:
+            new_status = "出席" if _is_before(first_tap_at, start_dt) else "遅刻"
+            attendance = models.Attendance(
+                date=today_jst,
+                member_id=member_id,
+                attendance=new_status,
+                first_tap_at=attendance_logs[0].timestamp,
+                last_tap_at=now,
+            )
+            db.add(attendance)
 
-    # 4. ログの作成と保存
     al = models.AttendanceLog(
         member_id=member_id,
         terminal_member_id=session.member.id,
-        timestamp=now
+        timestamp=now,
     )
     db.add(al)
+    await db.commit()
+    await db.refresh(al)
 
-    try:
-        await db.commit()
-        await db.refresh(al)
-        # Build schema from SQLAlchemy object attributes and include attendance
-        attendance_log = AttendanceLogWithAttendance.model_validate({
-            "id": al.id,
-            "member_id": al.member_id,
-            "timestamp": al.timestamp,
-            "terminal_member_id": al.terminal_member_id,
-            "member": al.member,
-            "attendance": new_status,
-        })
-        return attendance_log
-    except IntegrityError:
-        await db.rollback()
-        raise APIErrorCode.ALREADY_EXISTS_ATTENDANCE.of("Duplicate request", 409)
+    attendance_log = AttendanceLogWithAttendance.model_validate({
+        "id": al.id,
+        "member_id": al.member_id,
+        "timestamp": al.timestamp,
+        "terminal_member_id": al.terminal_member_id,
+        "member": al.member,
+        "attendance": new_status,
+    })
+    return attendance_log
 
 
 @router.post(

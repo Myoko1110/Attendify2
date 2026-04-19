@@ -6,7 +6,7 @@ AUTO_INSERT_TIME: '21:55'
 SCHEDULER_ENABLED: true
 grade:
   senior2:
-    generation: 48
+    generation: 47
     display_name: 高2
     type: senior
   senior1:

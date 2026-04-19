@@ -222,17 +222,23 @@ async def add_attendance_rates(db: AsyncSession, attendance_rates: list[Attendan
 
 async def get_attendance_logs(db: AsyncSession, *, member_id: UUID | None = None,
                               terminal_member_id: UUID | None = None,
+                              date: datetime.date | None = None,
                               start: datetime.datetime | None = None,
                               end: datetime.datetime | None = None,
                               limit: int | None = None, offset: int | None = None) -> Sequence[
     AttendanceLog]:
-    stmt = select(AttendanceLog)
+    stmt = select(AttendanceLog).order_by(AttendanceLog.timestamp.desc())
 
     if member_id is not None:
         stmt = stmt.where(AttendanceLog.member_id == member_id)
 
     if terminal_member_id is not None:
         stmt = stmt.where(AttendanceLog.terminal_member_id == terminal_member_id)
+
+    if date is not None:
+        start_dt = datetime.datetime.combine(date, datetime.time.min)
+        end_dt = datetime.datetime.combine(date, datetime.time.max)
+        stmt = stmt.where(between(AttendanceLog.timestamp, start_dt, end_dt))
 
     if start is not None:
         stmt = stmt.where(AttendanceLog.timestamp >= start)
@@ -929,6 +935,15 @@ async def remove_group_members(db: AsyncSession, group_id: UUID, member_ids: lis
     await db.commit()
 
 
+async def get_pre_attendance(db: AsyncSession, *, member_id: UUID, date: datetime.date) -> PreAttendance | None:
+    stmt = select(PreAttendance).where(
+        PreAttendance.member_id == member_id,
+        PreAttendance.date == date,
+    )
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
+
 async def get_pre_attendances(db: AsyncSession, *, member_id: UUID | None, month: str | None,
                               date: datetime.date | None,
                               pre_check_id: str | None) -> \
@@ -1034,7 +1049,7 @@ async def get_pre_checks(db: AsyncSession) -> Sequence[PreAttendance]:
 async def get_pre_check_by_id(db: AsyncSession, pre_check_id: str) -> PreCheck | None:
     stmt = select(PreCheck).where(PreCheck.id == pre_check_id)
     result = await db.execute(stmt)
-    return result.scalar_one_or_none()
+    return res.scalar_one_or_none()
 
 
 async def add_pre_check(db: AsyncSession, pre_checks: PreCheck):
