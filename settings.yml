@@ -6,22 +6,22 @@ AUTO_INSERT_TIME: '21:55'
 SCHEDULER_ENABLED: true
 grade:
   senior2:
-    generation: 47
+    generation: 48
     display_name: 高2
     type: senior
   senior1:
-    generation: 48
+    generation: 49
     display_name: 高1
     type: senior
   junior3:
-    generation: 49
+    generation: 50
     display_name: 中3
     type: junior
   junior2:
-    generation: 50
+    generation: 51
     display_name: 中2
     type: junior
   junior1:
-    generation: 51
+    generation: 52
     display_name: 中1
     type: junior
