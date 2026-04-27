@@ -1,6 +1,5 @@
 import datetime
 from uuid import UUID
-from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Body, Depends, Query
 from fastapi.params import Form
@@ -9,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import schemas, utils
 from app.abc.api_error import APIErrorCode
+from app.abc.attendance_log_type import AttendanceLogType
 from app.database import cruds, get_db, models
 from app.dependencies import get_valid_session, require_permission
 from app.schemas import AttendanceLogWithAttendance, Session
@@ -49,6 +49,20 @@ def _is_before(time_point: datetime.datetime, boundary: datetime.datetime) -> bo
     return time_point < boundary
 
 
+def _is_attendance_unique_violation(exc: IntegrityError) -> bool:
+    """attendances(date, member_id) の一意制約違反かどうかを判定する。"""
+    orig = getattr(exc, "orig", None)
+    sqlstate = getattr(orig, "sqlstate", None) or getattr(orig, "pgcode", None)
+    if sqlstate != "23505":
+        return False
+
+    msg = str(orig)
+    return (
+        "attendances_date_member_id_key" in msg
+        or ("attendances" in msg and "date" in msg and "member_id" in msg)
+    )
+
+
 @router.post(
     "",
     summary="出席ログを登録",
@@ -62,43 +76,60 @@ async def post_attendance_log(member_id: UUID = Body(),
     now = utils.now()
     now_jst = now.astimezone(JST)
     today_jst = now_jst.date()
-    jst_date = now.astimezone(ZoneInfo("Asia/Tokyo")).date()
 
-    schedule = await cruds.get_schedule(db, jst_date)
+    schedule = await cruds.get_schedule(db, today_jst)
     if not schedule:
         raise APIErrorCode.SCHEDULE_NOT_FOUND.of(
-            f"Schedule for {jst_date} is not registered.", 404
+            f"Schedule for {today_jst} is not registered.", 404
         )
     if not schedule.start_time or not schedule.end_time:
         raise APIErrorCode.INVALID_SCHEDULE.of(
             "Start/End time is not set for this schedule.", 400
         )
 
-    start_dt = datetime.datetime.combine(today_jst, schedule.start_time).replace(tzinfo=JST)
-    end_dt = datetime.datetime.combine(today_jst, schedule.end_time).replace(tzinfo=JST)
+    start_dt = datetime.datetime.combine(today_jst, schedule.start_time, tzinfo=JST)
+    end_dt = datetime.datetime.combine(today_jst, schedule.end_time, tzinfo=JST)
 
-    existing_attendance = await cruds.get_attendance(db, member_id, jst_date)
+    existing_attendance = await cruds.get_attendance(db, member_id, today_jst)
     if existing_attendance:
         raise APIErrorCode.ALREADY_EXISTS_ATTENDANCE.of("Attendance already exists", 409)
 
     attendance_logs = await cruds.get_attendance_logs(
         member_id=member_id,
         date=today_jst,
-        limit=1,
         db=db,
     )
-    first_tap_at = attendance_logs[0].timestamp.astimezone(JST) if attendance_logs else None
+    first_tap_log = min(attendance_logs, key=lambda x: x.timestamp) if attendance_logs else None
+    first_tap_at = first_tap_log.timestamp.astimezone(JST) if first_tap_log else None
+
+    log_type = AttendanceLogType.IN
 
     # 1回目なし
     if first_tap_at is None:
         if _is_before(now_jst, start_dt):
-            new_status = "出席"
+            new_status = "早退"
         elif _is_before(now_jst, end_dt):
-            new_status = "遅刻"
+            new_status = "遅早"
         else:
-            new_status = "欠席"
+            new_status = "遅刻"
+            log_type = AttendanceLogType.OUT
+            attendance = models.Attendance(
+                date=today_jst,
+                member_id=member_id,
+                attendance=new_status,
+                last_tap_at=now,
+            )
+            db.add(attendance)
+
     # 1回目あり
     else:
+        log_type = AttendanceLogType.OUT
+        stay_duration = now_jst - first_tap_at
+        if stay_duration < datetime.timedelta(minutes=5):
+            raise APIErrorCode.DURATION_TOO_SHORT.of(
+                "Stay duration is too short (< 5 minutes).", 409
+            )
+
         if _is_before(now_jst, start_dt):
             raise APIErrorCode.INVALID_CHECK_OUT_TIME.of(
                 "Second tap before start time is invalid.", 409
@@ -109,7 +140,7 @@ async def post_attendance_log(member_id: UUID = Body(),
                 date=today_jst,
                 member_id=member_id,
                 attendance=new_status,
-                first_tap_at=attendance_logs[0].timestamp,
+                first_tap_at=first_tap_log.timestamp,
                 last_tap_at=now,
             )
             db.add(attendance)
@@ -119,7 +150,7 @@ async def post_attendance_log(member_id: UUID = Body(),
                 date=today_jst,
                 member_id=member_id,
                 attendance=new_status,
-                first_tap_at=attendance_logs[0].timestamp,
+                first_tap_at=first_tap_log.timestamp,
                 last_tap_at=now,
             )
             db.add(attendance)
@@ -128,9 +159,17 @@ async def post_attendance_log(member_id: UUID = Body(),
         member_id=member_id,
         terminal_member_id=session.member.id,
         timestamp=now,
+        type=log_type,
     )
     db.add(al)
-    await db.commit()
+
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        if _is_attendance_unique_violation(exc):
+            raise APIErrorCode.ALREADY_EXISTS_ATTENDANCE.of("Attendance already exists", 409)
+        raise
     await db.refresh(al)
 
     attendance_log = AttendanceLogWithAttendance.model_validate({
@@ -140,6 +179,7 @@ async def post_attendance_log(member_id: UUID = Body(),
         "terminal_member_id": al.terminal_member_id,
         "member": al.member,
         "attendance": new_status,
+        "type": log_type,
     })
     return attendance_log
 

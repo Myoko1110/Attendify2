@@ -4,10 +4,11 @@ from uuid import uuid4
 
 import nanoid
 from sqlalchemy import Boolean, Column, Date, DateTime, Double, ForeignKey, Integer, JSON, String, \
-    TypeDecorator, UniqueConstraint, Uuid, Time
+    TypeDecorator, UniqueConstraint, Uuid, Time, Enum
 from sqlalchemy.orm import declarative_base, relationship
 
 from app import utils
+from app.abc.attendance_log_type import AttendanceLogType
 from app.abc.part import Part
 from app.abc.role import Role
 from app.abc.schedule_type import ScheduleType
@@ -152,6 +153,7 @@ class Attendance(Base):
     date = Column(Date, nullable=False, index=True)
     member_id = Column(Uuid, ForeignKey("members.id", ondelete="SET NULL"), nullable=True)
     attendance = Column(String(64), nullable=False)
+    is_disabled = Column(Boolean, nullable=False, default=False)
 
     first_tap_at = Column(DateTime(timezone=True), nullable=True)
     last_tap_at = Column(DateTime(timezone=True), nullable=True)
@@ -171,6 +173,8 @@ class AttendanceLog(Base):
 
     timestamp = Column(DateTime(timezone=True), nullable=False, default=utils.now)
     terminal_member_id = Column(Uuid, ForeignKey("members.id", ondelete="SET NULL"), nullable=False)
+
+    type = Column(EnumType(enum_class=AttendanceLogType), nullable=False)
 
     member = relationship("Member", foreign_keys=[member_id], lazy="selectin")
 

@@ -6,6 +6,7 @@ from uuid import UUID
 
 from sqlalchemy import between, delete, select, update
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import noload, selectinload
 from sqlalchemy.orm import aliased
@@ -27,12 +28,16 @@ def generate_token():
 
 
 async def get_attendances(db: AsyncSession, *, part: Part = None, generation: int = None,
-                          date: datetime.date = None, month: str = None, member: bool = False) -> \
+                          date: datetime.date = None, month: str = None, member: bool = False,
+                          include_disabled: bool = False) -> \
         list[Attendance]:
     stmt = select(Attendance)
 
     if not member:
         stmt = stmt.options(noload(Attendance.member))
+
+    if not include_disabled:
+        stmt = stmt.where(Attendance.is_disabled.is_(False))
 
     if date is not None:
         stmt = stmt.where(Attendance.date == date)
@@ -53,8 +58,11 @@ async def get_attendances(db: AsyncSession, *, part: Part = None, generation: in
     return [r for r in result.scalars().all()]
 
 
-async def get_attendance(db: AsyncSession, member_id: UUID, date: datetime.date) -> Attendance | None:
+async def get_attendance(db: AsyncSession, member_id: UUID, date: datetime.date,
+                         include_disabled: bool = False) -> Attendance | None:
     stmt = select(Attendance).where(Attendance.member_id == member_id, Attendance.date == date)
+    if not include_disabled:
+        stmt = stmt.where(Attendance.is_disabled.is_(False))
     res = await db.execute(stmt)
     return res.scalar_one_or_none()
 
@@ -63,16 +71,29 @@ async def add_attendance(db: AsyncSession, attendance: Attendance,
                          overwrite: bool = False) -> Attendance:
     # 既存動作 (overwrite=False)
     if not overwrite:
-        db.add(attendance)
-        await db.commit()
-        await db.refresh(attendance, ["member"])
-        return attendance
+        try:
+            db.add(attendance)
+            await db.commit()
+            await db.refresh(attendance, ["member"])
+            return attendance
+        except IntegrityError:
+            await db.rollback()
+            existing = await get_attendance(
+                db,
+                attendance.member_id,
+                attendance.date,
+                include_disabled=True,
+            )
+            if existing is not None and bool(getattr(existing, "is_disabled", False)):
+                return await add_attendance(db, attendance, overwrite=True)
+            raise
 
     # overwrite=True の場合は upsert を行う
     stmt = insert(Attendance).values(
         date=attendance.date,
         member_id=attendance.member_id,
         attendance=attendance.attendance,
+        is_disabled=False,
         created_at=utils.now(),
         updated_at=utils.now(),
     )
@@ -82,6 +103,7 @@ async def add_attendance(db: AsyncSession, attendance: Attendance,
         index_elements=["date", "member_id"],
         set_=dict(
             attendance=stmt.excluded.attendance,
+            is_disabled=False,
             updated_at=utils.now(),
         )
     )
@@ -101,12 +123,28 @@ async def add_attendance(db: AsyncSession, attendance: Attendance,
 async def add_attendances(db: AsyncSession, attendances: list[Attendance], overwrite: bool = False):
     # 既存動作 (overwrite=False)
     if not overwrite:
-        db.add_all(attendances)
-        await db.commit()
-        # refresh each instance so that DB-generated fields (id 等) が反映される
-        for a in attendances:
-            await db.refresh(a)
-        return attendances
+        try:
+            db.add_all(attendances)
+            await db.commit()
+            # refresh each instance so that DB-generated fields (id 等) が反映される
+            for a in attendances:
+                await db.refresh(a)
+            return attendances
+        except IntegrityError:
+            await db.rollback()
+
+            # disabled 行との重複なら upsert 相当にフォールバックする。
+            for a in attendances:
+                existing = await get_attendance(
+                    db,
+                    a.member_id,
+                    a.date,
+                    include_disabled=True,
+                )
+                if existing is not None and not bool(getattr(existing, "is_disabled", False)):
+                    raise
+
+            return await add_attendances(db, attendances, overwrite=True)
 
     # overwrite=True の場合はバルク upsert を行う
     if not attendances:
@@ -117,6 +155,7 @@ async def add_attendances(db: AsyncSession, attendances: list[Attendance], overw
             date=a.date,
             member_id=a.member_id,
             attendance=a.attendance,
+            is_disabled=False,
             created_at=utils.now(),
             updated_at=utils.now(),
         )
@@ -128,6 +167,7 @@ async def add_attendances(db: AsyncSession, attendances: list[Attendance], overw
         index_elements=["date", "member_id"],
         set_=dict(
             attendance=stmt.excluded.attendance,
+            is_disabled=False,
             updated_at=utils.now(),
         )
     )
@@ -150,26 +190,27 @@ async def add_attendances(db: AsyncSession, attendances: list[Attendance], overw
 
 
 async def remove_attendance(db: AsyncSession, attendance_id: UUID):
-    await db.execute(delete(Attendance).where(Attendance.id == attendance_id))
+    await db.execute(update(Attendance).where(Attendance.id == attendance_id).values(is_disabled=True))
     await db.commit()
 
 
 async def remove_attendances(db: AsyncSession, attendance_ids: list[UUID]):
-    """指定した出欠IDのリストを一括で削除する。attendance_ids が空なら何もしない。
-
-    単一削除のループではなく、IN 条件で一度の DB 操作で削除を行う。
-    この実装では PostgreSQL の RETURNING を利用して、削除した行の id と date を
-    1 回の DB 呼び出しで取得して返します。
-    """
+    """指定した出欠IDのリストを一括で論理削除する。attendance_ids が空なら何もしない。"""
     if not attendance_ids:
         return []
 
-    stmt = delete(Attendance).where(Attendance.id.in_(attendance_ids)).returning(Attendance.id,
-                                                                                 Attendance.date)
+    stmt = (
+        update(Attendance)
+        .where(
+            Attendance.id.in_(attendance_ids),
+            Attendance.is_disabled.is_(False),
+        )
+        .values(is_disabled=True)
+        .returning(Attendance.id, Attendance.date)
+    )
     result = await db.execute(stmt)
     rows = result.all()
     await db.commit()
-    # rows は sqlalchemy.engine.Row のリスト。各要素は (id, date)
     return rows
 
 
@@ -1080,15 +1121,55 @@ async def update_pre_check(db: AsyncSession, pre_check_id: str,
     return pre_check
 
 
+def _auto_attendance_status_from_log(
+        log_timestamp: datetime.datetime,
+        start_dt: datetime.datetime,
+        end_dt: datetime.datetime,
+) -> str:
+    """attendance_log 1件から自動補完する attendance を決定する。
+
+    返り値:
+    - start_time より前: "早退"
+    - end_time より前: "遅早"
+    - end_time 以後: "遅刻"
+    """
+    log_time = log_timestamp.astimezone(start_dt.tzinfo)
+
+    if log_time < start_dt:
+        return "早退"
+    if log_time < end_dt:
+        return "遅早"
+    return "遅刻"
+
+
+def _auto_attendance_status_from_log_range(
+        first_log_timestamp: datetime.datetime,
+        last_log_timestamp: datetime.datetime,
+        start_dt: datetime.datetime,
+        end_dt: datetime.datetime,
+) -> str:
+    """attendance_log 複数件から first/last を使って attendance を決定する。"""
+    first_time = first_log_timestamp.astimezone(start_dt.tzinfo)
+    last_time = last_log_timestamp.astimezone(start_dt.tzinfo)
+
+    # last が end 以降なら在席完了、未満なら途中退席扱い。
+    if last_time >= end_dt:
+        return "出席" if first_time < start_dt else "遅刻"
+    return "早退" if first_time < start_dt else "遅早"
+
+
 async def auto_insert_daily_attendances(db: AsyncSession, date: datetime.date):
     """指定日の出欠を未登録の部員について自動挿入する。
 
     ロジック:
     - 指定日の Schedule がなければ何もしない。
-    - Schedule.type == ScheduleType.WEEKDAY の場合、各部員の WeeklyParticipation を参照し、
-      当日の weekday に対して is_active が True なら 'present'、それ以外は 'absent'.
-    - Schedule.type が他の場合は全員 'absent'.
     - 既に Attendance レコードが存在する member はスキップ。
+    - attendance_log が 1 件ある場合はその時刻で補完する。
+      - start_time 前なら '早退'
+      - end_time 前なら '遅早'
+      - end_time 後なら '遅刻'
+    - attendance_log が 2 件以上ある場合は first/min と last/max で補完する。
+    - attendance_log がない場合のみ従来の schedule / weekly participation の処理を使う。
     - まとめて cruds.add_attendances に渡して挿入する。
 
     戻り値: 挿入した Attendance のリスト（cruds.add_attendances の戻り）
@@ -1106,8 +1187,17 @@ async def auto_insert_daily_attendances(db: AsyncSession, date: datetime.date):
     members = await get_members(db, include_weekly_participation=True)
 
     # 3. 既存の出欠を取得して member_id の集合を作る
-    existing = await get_attendances(db, date=date, member=True)
+    existing = await get_attendances(db, date=date, member=True, include_disabled=True)
     existing_member_ids = {a.member_id for a in existing if a.member_id is not None}
+
+    # 4. 当日の attendance_log を member_id ごとにまとめる
+    attendance_logs = await get_attendance_logs(db, date=date)
+    logs_by_member_id: dict[UUID, list[AttendanceLog]] = {}
+    for log in attendance_logs:
+        logs_by_member_id.setdefault(log.member_id, []).append(log)
+
+    start_dt = datetime.datetime.combine(date, schedule.start_time, tzinfo=utils.JST)
+    end_dt = datetime.datetime.combine(date, schedule.end_time, tzinfo=utils.JST)
 
     attendances_to_add = []
 
@@ -1118,22 +1208,36 @@ async def auto_insert_daily_attendances(db: AsyncSession, date: datetime.date):
         if m.id in existing_member_ids:
             continue
 
-        # find weekly participation for this weekday
-        wp = None
-        for r in getattr(m, "weekly_participations", []):
-            if r.weekday == weekday:
-                wp = r
-                break
+        member_logs = logs_by_member_id.get(m.id, [])
+        if len(member_logs) == 1:
+            status = _auto_attendance_status_from_log(member_logs[0].timestamp, start_dt, end_dt)
+        elif len(member_logs) > 1:
+            first_log = min(member_logs, key=lambda x: x.timestamp)
+            last_log = max(member_logs, key=lambda x: x.timestamp)
+            status = _auto_attendance_status_from_log_range(
+                first_log.timestamp,
+                last_log.timestamp,
+                start_dt,
+                end_dt,
+            )
+        else:
+            # attendance_log がない場合のみ従来処理を継続する。
+            if schedule.type == ScheduleType.WEEKDAY:
+                # find weekly participation for this weekday
+                wp = None
+                for r in getattr(m, "weekly_participations", []):
+                    if r.weekday == weekday:
+                        wp = r
+                        break
 
-        if schedule.type == ScheduleType.WEEKDAY:
-            if wp is not None and getattr(wp, "is_active", False):
-                # 週間参加情報の default_attendance が「講習」の場合のみ '講習' を登録し、それ以外は欠席とする
-                da = getattr(wp, "default_attendance", None)
-                status = da if da == "講習" else "欠席"
+                if wp is not None and getattr(wp, "is_active", False):
+                    # 週間参加情報の default_attendance が「講習」の場合のみ '講習' を登録し、それ以外は欠席とする
+                    da = getattr(wp, "default_attendance", None)
+                    status = da if da == "講習" else "欠席"
+                else:
+                    status = "欠席"
             else:
                 status = "欠席"
-        else:
-            status = "欠席"
 
         attendance = Attendance(
             date=date,
@@ -1146,7 +1250,7 @@ async def auto_insert_daily_attendances(db: AsyncSession, date: datetime.date):
         return []
 
     try:
-        inserted = await add_attendances(db, attendances_to_add, overwrite=False)
+        inserted = await add_attendances(db, attendances_to_add)
         return inserted
     except Exception:
         # 失敗しても処理を止めない。ただしログは残す。

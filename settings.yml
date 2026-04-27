@@ -1,12 +1,12 @@
-REDIRECT_URI: https://tokowo.jp/login
+REDIRECT_URI: http://localhost:3039/login
 ORIGINS:
-- https://tokowo.jp
-DEBUG: false
+- http://localhost:3039
+DEBUG: true
 AUTO_INSERT_TIME: '21:00'
 SCHEDULER_ENABLED: false
 grade:
   senior2:
-    generation: 48
+    generation: 47
     display_name: 高2
     type: senior
   senior1:
