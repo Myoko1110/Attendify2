@@ -1,8 +1,10 @@
 import datetime
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, Query
 from fastapi.params import Form
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -103,6 +105,17 @@ async def post_attendance_log(member_id: UUID = Body(),
     first_tap_at = first_tap_log.timestamp.astimezone(JST) if first_tap_log else None
 
     log_type = AttendanceLogType.IN
+    stmt = None
+
+    def _attendance_values(attendance: str, *, first_tap_at: datetime.datetime | None = None,
+                           last_tap_at: datetime.datetime | None = None) -> dict:
+        return {
+            "date": today_jst,
+            "member_id": member_id,
+            "attendance": attendance,
+            "first_tap_at": first_tap_at,
+            "last_tap_at": last_tap_at,
+        }
 
     # 1回目なし
     if first_tap_at is None:
@@ -113,13 +126,9 @@ async def post_attendance_log(member_id: UUID = Body(),
         else:
             new_status = "遅刻"
             log_type = AttendanceLogType.OUT
-            attendance = models.Attendance(
-                date=today_jst,
-                member_id=member_id,
-                attendance=new_status,
-                last_tap_at=now,
+            stmt = insert(models.Attendance).values(
+                _attendance_values(new_status, last_tap_at=now)
             )
-            db.add(attendance)
 
     # 1回目あり
     else:
@@ -136,24 +145,22 @@ async def post_attendance_log(member_id: UUID = Body(),
             )
         elif _is_before(now_jst, end_dt):
             new_status = "早退" if _is_before(first_tap_at, start_dt) else "遅早"
-            attendance = models.Attendance(
-                date=today_jst,
-                member_id=member_id,
-                attendance=new_status,
-                first_tap_at=first_tap_log.timestamp,
-                last_tap_at=now,
+            stmt = insert(models.Attendance).values(
+                _attendance_values(
+                    new_status,
+                    first_tap_at=first_tap_log.timestamp,
+                    last_tap_at=now,
+                )
             )
-            db.add(attendance)
         else:
             new_status = "出席" if _is_before(first_tap_at, start_dt) else "遅刻"
-            attendance = models.Attendance(
-                date=today_jst,
-                member_id=member_id,
-                attendance=new_status,
-                first_tap_at=first_tap_log.timestamp,
-                last_tap_at=now,
+            stmt = insert(models.Attendance).values(
+                _attendance_values(
+                    new_status,
+                    first_tap_at=first_tap_log.timestamp,
+                    last_tap_at=now,
+                )
             )
-            db.add(attendance)
 
     al = models.AttendanceLog(
         member_id=member_id,
@@ -163,6 +170,17 @@ async def post_attendance_log(member_id: UUID = Body(),
     )
     db.add(al)
 
+    if stmt is not None:
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["date", "member_id"],
+            set_={
+                "attendance": stmt.excluded.attendance,
+                "is_disabled": False,
+                "updated_at": utils.now(),
+            },
+        )
+        await db.execute(stmt)
+
     try:
         await db.commit()
     except IntegrityError as exc:
@@ -171,6 +189,7 @@ async def post_attendance_log(member_id: UUID = Body(),
             raise APIErrorCode.ALREADY_EXISTS_ATTENDANCE.of("Attendance already exists", 409)
         raise
     await db.refresh(al)
+    await db.refresh(al, ["member"])
 
     attendance_log = AttendanceLogWithAttendance.model_validate({
         "id": al.id,
@@ -234,7 +253,7 @@ async def bulk_delete_attendance_logs(attendance_log_ids: list[UUID] = Body(...)
     response_model=schemas.AttendanceLogWithAttendance,
 )
 async def post_attendance_log_by_felica_idm(
-        felica_idm: str = Form(),
+        felica_idm: Annotated[str, Form()],
         session: Session = Depends(get_valid_session),
         db: AsyncSession = Depends(get_db)
 ):
@@ -252,7 +271,7 @@ async def post_attendance_log_by_felica_idm(
     response_model=schemas.AttendanceLogWithAttendance,
 )
 async def post_attendance_log_by_studentid(
-        student_id: int = Form(),
+        student_id: Annotated[int, Form()],
         session: Session = Depends(get_valid_session),
         db: AsyncSession = Depends(get_db)
 ):
