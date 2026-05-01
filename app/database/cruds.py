@@ -1209,11 +1209,8 @@ async def auto_insert_daily_attendances(db: AsyncSession, date: datetime.date):
             continue
 
         member_logs = logs_by_member_id.get(m.id, [])
-        first_log: AttendanceLog | None = None
-        last_log: AttendanceLog | None = None
         if len(member_logs) == 1:
-            first_log = last_log = member_logs[0]
-            status = _auto_attendance_status_from_log(first_log.timestamp, start_dt, end_dt)
+            status = _auto_attendance_status_from_log(member_logs[0].timestamp, start_dt, end_dt)
         elif len(member_logs) > 1:
             first_log = min(member_logs, key=lambda x: x.timestamp)
             last_log = max(member_logs, key=lambda x: x.timestamp)
@@ -1246,8 +1243,8 @@ async def auto_insert_daily_attendances(db: AsyncSession, date: datetime.date):
             date=date,
             member_id=m.id,
             attendance=status,
-            first_tap_at=first_log.timestamp if first_log is not None else None,
-            last_tap_at=last_log.timestamp if last_log is not None else None,
+            first_tap_at=first_log.timestamp if first_log else None,
+            last_tap_at=last_log.timestamp if last_log else None,
         )
         attendances_to_add.append(attendance)
 

@@ -10,6 +10,7 @@ class GradeWithRolesSchema(GradeSchema):
 
 
 class GradesWithRolesSchema(BaseModel):
+    senior3: GradeWithRolesSchema
     senior2: GradeWithRolesSchema
     senior1: GradeWithRolesSchema
     junior3: GradeWithRolesSchema
