@@ -35,6 +35,8 @@ async def get_attendances(db: AsyncSession, *, part: Part = None, generation: in
 
     if not member:
         stmt = stmt.options(noload(Attendance.member))
+    else:
+        stmt = stmt.options(selectinload(Attendance.member))
 
     if not include_disabled:
         stmt = stmt.where(Attendance.is_disabled.is_(False))
