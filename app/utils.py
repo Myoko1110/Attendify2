@@ -54,6 +54,7 @@ class Attendances(list[schemas.Attendance]):
 
         total = 0
         score = 0
+        details = []
 
         for attendance in self:
             if attendance.attendance in scores:
@@ -61,17 +62,28 @@ class Attendances(list[schemas.Attendance]):
                 if s is not None:
                     total += 1
                     score += s
+                    details.append(f"{attendance.attendance}={s}")
             else:
                 if actual:
                     total += 1
+                    details.append(f"{attendance.attendance}=unknown(counted)")
 
         if total == 0:
             return None
 
-        return float(
+        result = float(
             (Decimal(str(score)) / Decimal(str(total)))
             .quantize(Decimal("0.1"), rounding="ROUND_HALF_UP")
         )
+
+        import logging
+        logging.debug(
+            f"Attendances.calc(actual={actual}): "
+            f"count={len(self)} score_sum={score} total={total} result={result}% "
+            f"detail=[{','.join(details[:5])}{'...' if len(details) > 5 else ''}]"
+        )
+
+        return result
 
     def filter_by_part(self, part: schemas.Part) -> "Attendances":
         return Attendances(*[a for a in self if a.member and a.member.part == part])

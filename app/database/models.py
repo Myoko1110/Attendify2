@@ -182,7 +182,7 @@ class AttendanceLog(Base):
 class AttendanceRate(Base):
     __tablename__ = "attendance_rates"
     __table_args__ = (
-        UniqueConstraint('target_id', 'month', 'actual'),
+        UniqueConstraint('target_type', 'target_id', 'month', 'actual'),
     )
     id = Column(Uuid, nullable=False, primary_key=True, default=uuid4)
 

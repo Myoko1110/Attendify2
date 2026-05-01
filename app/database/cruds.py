@@ -236,23 +236,47 @@ async def clear_attendance_rates(db: AsyncSession):
     await db.commit()
 
 
+async def clear_attendance_rates_by_month(db: AsyncSession, month: str):
+    await db.execute(delete(AttendanceRate).where(AttendanceRate.month == month))
+    await db.commit()
+
+
 async def add_attendance_rates(db: AsyncSession, attendance_rates: list[AttendanceRate]):
     if not attendance_rates:
         return []
 
-    stmt = insert(AttendanceRate).values([
+    # target_type='all' は target_id=NULL だと UNIQUE 制約で衝突せず重複が蓄積するため、固定IDで正規化する。
+    normalized_rates = [
         dict(
             target_type=x.target_type,
-            target_id=x.target_id,
+            target_id=("__all__" if x.target_type == "all" and x.target_id is None else x.target_id),
             month=x.month,
             actual=x.actual,
             rate=x.rate,
         )
         for x in attendance_rates
-    ])
+    ]
+
+    # 既存データに target_id=NULL の all 行がある場合、以後の集計ズレを防ぐため対象月・actualを掃除する。
+    cleanup_keys = {
+        (r["month"], r["actual"])
+        for r in normalized_rates
+        if r["target_type"] == "all"
+    }
+    for month, actual in cleanup_keys:
+        await db.execute(
+            delete(AttendanceRate).where(
+                AttendanceRate.target_type == "all",
+                AttendanceRate.target_id.is_(None),
+                AttendanceRate.month == month,
+                AttendanceRate.actual == actual,
+            )
+        )
+
+    stmt = insert(AttendanceRate).values(normalized_rates)
 
     stmt = stmt.on_conflict_do_update(
-        index_elements=["target_id", "month", "actual"],
+        index_elements=["target_type", "target_id", "month", "actual"],
         set_=dict(
             rate=stmt.excluded.rate,
         )
