@@ -49,7 +49,7 @@ async def _ensure_scheduler_started() -> dict:
     scheduler = getattr(app.state, "scheduler", None)
     if scheduler is None:
         scheduler = AsyncIOScheduler()
-        auto_insert_time = settings.get("AUTO_INSERT_TIME", "23:09")
+        auto_insert_time = settings.get("AUTO_INSERT_TIME", "21:00")
         hour, minute = map(int, auto_insert_time.split(":"))
         scheduler.add_job(
             auto_insert_daily_attendances,

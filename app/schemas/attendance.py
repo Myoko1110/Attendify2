@@ -8,6 +8,11 @@ class Attendance(BaseModel):
     id: UUID
     date: datetime.date
     attendance: str
+    is_disabled: bool
+
+    first_tap_at: datetime.datetime | None
+    last_tap_at: datetime.datetime | None
+
     created_at: datetime.datetime
     updated_at: datetime.datetime
     member_id: UUID | None

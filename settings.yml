@@ -2,8 +2,8 @@ REDIRECT_URI: http://localhost:3039/login
 ORIGINS:
 - http://localhost:3039
 DEBUG: true
-AUTO_INSERT_TIME: '21:00'
-SCHEDULER_ENABLED: false
+AUTO_INSERT_TIME: '21:42'
+SCHEDULER_ENABLED: true
 grade:
   senior2:
     generation: 47

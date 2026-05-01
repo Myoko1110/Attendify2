@@ -119,15 +119,15 @@ async def post_attendance_log(member_id: UUID = Body(),
 
     # 1回目なし
     if first_tap_at is None:
-        if _is_before(now_jst, start_dt):
-            new_status = "早退"
-        elif _is_before(now_jst, end_dt):
-            new_status = "遅早"
-        else:
+        if _is_before(now_jst, start_dt):  # 開始前
+            new_status = "出席"
+        elif _is_before(now_jst, end_dt):  # 開始後～終了前
+            new_status = "遅刻"
+        else:  # 終了後
             new_status = "遅刻"
             log_type = AttendanceLogType.OUT
             stmt = insert(models.Attendance).values(
-                _attendance_values(new_status, last_tap_at=now)
+                _attendance_values(new_status, first_tap_at=now)
             )
 
     # 1回目あり
@@ -139,11 +139,11 @@ async def post_attendance_log(member_id: UUID = Body(),
                 "Stay duration is too short (< 5 minutes).", 409
             )
 
-        if _is_before(now_jst, start_dt):
+        if _is_before(now_jst, start_dt):  # 開始前
             raise APIErrorCode.INVALID_CHECK_OUT_TIME.of(
                 "Second tap before start time is invalid.", 409
             )
-        elif _is_before(now_jst, end_dt):
+        elif _is_before(now_jst, end_dt):  # 開始後～終了前
             new_status = "早退" if _is_before(first_tap_at, start_dt) else "遅早"
             stmt = insert(models.Attendance).values(
                 _attendance_values(
@@ -152,7 +152,7 @@ async def post_attendance_log(member_id: UUID = Body(),
                     last_tap_at=now,
                 )
             )
-        else:
+        else:  # 終了後
             new_status = "出席" if _is_before(first_tap_at, start_dt) else "遅刻"
             stmt = insert(models.Attendance).values(
                 _attendance_values(

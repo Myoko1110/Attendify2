@@ -13,6 +13,7 @@ async def auto_insert_daily_attendances():
     非同期関数を await してくれるため async 関数にしてあります。
     """
     today = date.today()
+    print(f"auto_insert_daily_attendances called for date={today}")
     async with async_session() as db:
         try:
             inserted = await cruds.auto_insert_daily_attendances(db, today)
