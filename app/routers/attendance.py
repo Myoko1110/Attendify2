@@ -49,9 +49,9 @@ async def post_attendance(
     try:
         attendance = await cruds.add_attendance(db, attendance_params, overwrite=overwrite)
 
-        # 出欠率の再計算処理をバックグラウンドタスクに移動
+        # 単発登録でも月再構築ロジックに統一してズレを防ぐ
         updated_month = attendance.date.strftime("%Y-%m")
-        background_tasks.add_task(recalculate_attendance_rates, updated_month, attendance)
+        background_tasks.add_task(recalculate_attendance_rates_bulk, updated_month)
 
         await db.refresh(attendance, ["member"])
         return attendance
@@ -60,40 +60,12 @@ async def post_attendance(
 
 
 async def recalculate_attendance_rates(updated_month: str, attendance: models.Attendance):
-    logger.info(f"recalculate_attendance_rates start month={updated_month} attendance_id={getattr(attendance, 'id', None)}")
-    async with async_session() as db:
-        all_attendances = Attendances(*(await cruds.get_attendances(db, month=updated_month)))
-
-        attendance_rates = [
-            models.AttendanceRate(target_type="all", month=updated_month,
-                                  rate=all_attendances.calc(False), actual=False),
-            models.AttendanceRate(target_type="all", month=updated_month,
-                                  rate=all_attendances.calc(True), actual=True),
-        ]
-
-        part_attendances = all_attendances.filter_by_part(attendance.member.part)
-        attendance_rates.append(
-            models.AttendanceRate(target_type="part", target_id=attendance.member.part.value,
-                                  month=updated_month,
-                                  rate=part_attendances.calc(False), actual=False))
-        attendance_rates.append(
-            models.AttendanceRate(target_type="part", target_id=attendance.member.part.value,
-                                  month=updated_month,
-                                  rate=part_attendances.calc(True), actual=True))
-
-        member_attendances = all_attendances.filter_by_member(attendance.member)
-        attendance_rates.append(
-            models.AttendanceRate(target_type="member", target_id=str(attendance.member.id),
-                                  month=updated_month, rate=member_attendances.calc(False),
-                                  actual=False))
-        attendance_rates.append(
-            models.AttendanceRate(target_type="member", target_id=str(attendance.member.id),
-                                  month=updated_month, rate=member_attendances.calc(True),
-                                  actual=True))
-
-        await cruds.add_attendance_rates(db, attendance_rates)
-        await db.commit()
-    logger.info(f"recalculate_attendance_rates finished month={updated_month} attendance_id={getattr(attendance, 'id', None)}")
+    # 互換のため残す: 旧呼び出し経路も月再構築ロジックへ委譲する
+    logger.info(
+        f"recalculate_attendance_rates delegated to bulk month={updated_month} "
+        f"attendance_id={getattr(attendance, 'id', None)}"
+    )
+    await recalculate_attendance_rates_bulk(updated_month)
 
 
 @router.post(
