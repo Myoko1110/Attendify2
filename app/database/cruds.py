@@ -191,9 +191,17 @@ async def add_attendances(db: AsyncSession, attendances: list[Attendance], overw
     return inserted
 
 
-async def remove_attendance(db: AsyncSession, attendance_id: UUID):
-    await db.execute(update(Attendance).where(Attendance.id == attendance_id).values(is_disabled=True))
+async def remove_attendance(db: AsyncSession, attendance_id: UUID) -> datetime.date | None:
+    stmt = (
+        update(Attendance)
+        .where(Attendance.id == attendance_id)
+        .values(is_disabled=True)
+        .returning(Attendance.date)
+    )
+    result = await db.execute(stmt)
+    row = result.first()
     await db.commit()
+    return row[0] if row else None
 
 
 async def remove_attendances(db: AsyncSession, attendance_ids: list[UUID]):
@@ -216,12 +224,17 @@ async def remove_attendances(db: AsyncSession, attendance_ids: list[UUID]):
     return rows
 
 
-async def update_attendance(db: AsyncSession, attendance_id: UUID, attendance: str):
-    await db.execute(
-        update(Attendance).where(Attendance.id == attendance_id).values(
-            attendance=attendance)
+async def update_attendance(db: AsyncSession, attendance_id: UUID, attendance: str) -> datetime.date | None:
+    stmt = (
+        update(Attendance)
+        .where(Attendance.id == attendance_id)
+        .values(attendance=attendance)
+        .returning(Attendance.date)
     )
+    result = await db.execute(stmt)
+    row = result.first()
     await db.commit()
+    return row[0] if row else None
 
 
 async def get_attendance_rates(db: AsyncSession) -> list[AttendanceRate]:
