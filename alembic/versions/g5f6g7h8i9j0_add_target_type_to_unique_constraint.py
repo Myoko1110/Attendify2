@@ -1,7 +1,7 @@
 """add target_type to attendance_rates unique constraint
 
 Revision ID: g5f6g7h8i9j0
-Revises: f4e5d6c7b8a9
+Revises: 6085dc70f5b0
 Create Date: 2026-05-01 00:00:00.000000
 
 """
