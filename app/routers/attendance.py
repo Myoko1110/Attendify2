@@ -1,4 +1,5 @@
 import datetime
+import logging
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, Query
@@ -11,6 +12,9 @@ from app.abc.part import Part
 from app.database import async_session, cruds, get_db, models
 from app.dependencies import get_valid_session, require_permission
 from app.utils import Attendances
+
+# uvicorn の既定ハンドラ/フォーマッタを使って出力形式を統一する
+logger = logging.getLogger("uvicorn.error")
 
 router = APIRouter(prefix="/attendance", tags=["Attendance"],
                    dependencies=[Depends(get_valid_session)])
@@ -36,9 +40,9 @@ async def get_attendances(part: Part = None, generation: int = None, date: datet
     dependencies=[Depends(require_permission("attendance:write"))],
 )
 async def post_attendance(
+        background_tasks: BackgroundTasks,
         a: schemas.AttendancesParams = Form(),
         db: AsyncSession = Depends(get_db),
-        background_tasks: BackgroundTasks = BackgroundTasks(),
         overwrite: bool = Query(False, description="重複があった場合に上書きする")
 ):
     attendance_params = models.Attendance(**a.model_dump())
@@ -56,6 +60,7 @@ async def post_attendance(
 
 
 async def recalculate_attendance_rates(updated_month: str, attendance: models.Attendance):
+    logger.info(f"recalculate_attendance_rates start month={updated_month} attendance_id={getattr(attendance, 'id', None)}")
     async with async_session() as db:
         all_attendances = Attendances(*(await cruds.get_attendances(db, month=updated_month)))
 
@@ -88,6 +93,7 @@ async def recalculate_attendance_rates(updated_month: str, attendance: models.At
 
         await cruds.add_attendance_rates(db, attendance_rates)
         await db.commit()
+    logger.info(f"recalculate_attendance_rates finished month={updated_month} attendance_id={getattr(attendance, 'id', None)}")
 
 
 @router.post(
@@ -98,8 +104,8 @@ async def recalculate_attendance_rates(updated_month: str, attendance: models.At
 )
 async def post_attendances(
         attendances: list[schemas.AttendancesParams],
+        background_tasks: BackgroundTasks,
         db: AsyncSession = Depends(get_db),
-        background_tasks: BackgroundTasks = BackgroundTasks(),
         overwrite: bool = Query(False,
                                 description="重複があった場合に上書きする")) -> schemas.AttendancesOperationalResult:
     attendance_list = [models.Attendance(**a.model_dump()) for a in attendances]
@@ -115,7 +121,9 @@ async def post_attendances(
     # バルク登録された出欠の月ごとに出席率再計算をバックグラウンドで行う
     try:
         months = sorted({a.date.strftime("%Y-%m") for a in inserted if a is not None})
+        logger.info(f"post_attendances: inserted_count={len(inserted)} months={months}")
         for m in months:
+            logger.info(f"post_attendances: scheduling recalc for month={m}")
             background_tasks.add_task(recalculate_attendance_rates_bulk, m)
     except Exception:
         # バックグラウンドタスクの登録に失敗しても主処理は成功させる
@@ -130,9 +138,6 @@ async def recalculate_attendance_rates_bulk(updated_month: str):
     単一登録用の recalculate_attendance_rates と異なり、該当月の全出欠（member=True）を取得して
     全体・パート・各部員ごとの出席率を計算する。
     """
-    import logging
-    logger = logging.getLogger(__name__)
-
     async with async_session() as db:
         # メンバーをロードした上で当月の出欠を取得
         attendances = await cruds.get_attendances(db, member=True)
@@ -205,8 +210,8 @@ async def recalculate_attendance_rates_bulk(updated_month: str):
 )
 async def delete_attendance(
     attendance_id: UUID,
-    db: AsyncSession = Depends(get_db),
-    background_tasks: BackgroundTasks = BackgroundTasks()
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db)
 ) -> schemas.AttendanceOperationalResult:
     # 削除実行（日付を返す）
     deleted_date = await cruds.remove_attendance(db, attendance_id)
@@ -214,6 +219,7 @@ async def delete_attendance(
     # 削除した出欠の月について再計算タスクを登録
     if deleted_date:
         updated_month = deleted_date.strftime("%Y-%m")
+        logger.info(f"delete_attendance: scheduling recalc for month={updated_month}")
         background_tasks.add_task(recalculate_attendance_rates_bulk, updated_month)
 
     return schemas.AttendanceOperationalResult(result=True, attendance_id=attendance_id)
@@ -228,8 +234,8 @@ async def delete_attendance(
 async def patch_attendance(
     attendance_id: UUID,
     attendance: str,
-    db: AsyncSession = Depends(get_db),
-    background_tasks: BackgroundTasks = BackgroundTasks()
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db)
 ) -> schemas.AttendanceOperationalResult:
     # 更新実行（日付を返す）
     updated_date = await cruds.update_attendance(db, attendance_id, attendance)
@@ -237,6 +243,7 @@ async def patch_attendance(
     # 更新した出欠の月について再計算タスクを登録
     if updated_date:
         updated_month = updated_date.strftime("%Y-%m")
+        logger.info(f"patch_attendance: scheduling recalc for month={updated_month}")
         background_tasks.add_task(recalculate_attendance_rates_bulk, updated_month)
     
     return schemas.AttendanceOperationalResult(result=True, attendance_id=attendance_id)
@@ -310,9 +317,9 @@ async def recalc_attendance(
     description="複数の出欠情報を一括で削除します。attendance_ids は削除する出欠の UUID の配列です。",
     dependencies=[Depends(require_permission("attendance:write"))],
 )
-async def bulk_delete_attendances(attendance_ids: list[UUID], db: AsyncSession = Depends(
-    get_db),
-                                  background_tasks: BackgroundTasks = BackgroundTasks()) -> schemas.AttendancesOperationalResult:
+async def bulk_delete_attendances(attendance_ids: list[UUID],
+                                  background_tasks: BackgroundTasks,
+                                  db: AsyncSession = Depends(get_db)) -> schemas.AttendancesOperationalResult:
     """attendance_ids に含まれる出欠を一括削除し、該当する月ごとに出席率を再計算するためのバックグラウンドタスクを登録します。
 
     DB 削除は cruds.remove_attendances で一回の DELETE クエリにまとめて行います。
@@ -325,7 +332,9 @@ async def bulk_delete_attendances(attendance_ids: list[UUID], db: AsyncSession =
 
     # rows は list[Row(id, date)] なので、それを月に変換して再計算タスクを登録する
     months = sorted({row[1].strftime("%Y-%m") for row in rows if row[1] is not None})
+    logger.info(f"bulk_delete_attendances: removed_rows={len(rows)} months={months}")
     for m in months:
+        logger.info(f"bulk_delete_attendances: scheduling recalc for month={m}")
         background_tasks.add_task(recalculate_attendance_rates_bulk, m)
 
     return schemas.AttendancesOperationalResult(result=True)

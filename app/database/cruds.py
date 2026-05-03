@@ -245,11 +245,10 @@ async def add_attendance_rates(db: AsyncSession, attendance_rates: list[Attendan
     if not attendance_rates:
         return []
 
-    # target_type='all' は target_id=NULL だと UNIQUE 制約で衝突せず重複が蓄積するため、固定IDで正規化する。
     normalized_rates = [
         dict(
             target_type=x.target_type,
-            target_id=("__all__" if x.target_type == "all" and x.target_id is None else x.target_id),
+            target_id=(None if x.target_type == "all" and x.target_id is None else x.target_id),
             month=x.month,
             actual=x.actual,
             rate=x.rate,

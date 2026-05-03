@@ -2,7 +2,7 @@ import datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Query
+from fastapi import APIRouter, Body, Depends, Query, BackgroundTasks
 from fastapi.params import Form
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
@@ -13,6 +13,7 @@ from app.abc.api_error import APIErrorCode
 from app.abc.attendance_log_type import AttendanceLogType
 from app.database import cruds, get_db, models
 from app.dependencies import get_valid_session, require_permission
+from app.routers.attendance import recalculate_attendance_rates_bulk
 from app.schemas import AttendanceLogWithAttendance, Session
 from app.utils import JST
 
@@ -60,8 +61,8 @@ def _is_attendance_unique_violation(exc: IntegrityError) -> bool:
 
     msg = str(orig)
     return (
-        "attendances_date_member_id_key" in msg
-        or ("attendances" in msg and "date" in msg and "member_id" in msg)
+            "attendances_date_member_id_key" in msg
+            or ("attendances" in msg and "date" in msg and "member_id" in msg)
     )
 
 
@@ -74,6 +75,7 @@ def _is_attendance_unique_violation(exc: IntegrityError) -> bool:
 )
 async def post_attendance_log(member_id: UUID = Body(),
                               session: Session = Depends(get_valid_session),
+                              background_tasks: BackgroundTasks = BackgroundTasks(),
                               db: AsyncSession = Depends(get_db)):
     now = utils.now()
     now_jst = now.astimezone(JST)
@@ -180,6 +182,8 @@ async def post_attendance_log(member_id: UUID = Body(),
             },
         )
         await db.execute(stmt)
+
+        background_tasks.add_task(recalculate_attendance_rates_bulk, now.strftime("%Y-%m"))
 
     try:
         await db.commit()
