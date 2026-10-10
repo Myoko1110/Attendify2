@@ -3,6 +3,7 @@ import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+import os
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import FileResponse, JSONResponse
 
@@ -39,9 +40,10 @@ app.add_middleware(
 )
 app.add_middleware(
     SessionMiddleware,
-    secret_key="64b75f34602a43f95f9ebf93857309ab55aecb67bdb2245782746c7316e3477a",
+    secret_key=os.environ.get("SESSION_SECRET") or settings["SESSION_SECRET"],
     https_only=True,
-    same_site="strict"
+    same_site="strict",
+    max_age=3600 * 24 * settings["SESSION_EXPIRE"],
 )
 
 
