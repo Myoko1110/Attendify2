@@ -4,6 +4,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import yaml
+import secrets
 
 from app import schemas
 from app.schemas import Member
@@ -166,8 +167,17 @@ actual_attendance_score = {
 
 def load_setting_data():
     yaml_path = Path("settings.yml")
-    with yaml_path.open(encoding="utf-8") as f:
-        return yaml.safe_load(f)
+    data = {}
+    if yaml_path.exists():
+        with yaml_path.open(encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+
+    # 自動生成: SESSION_SECRET がなければ安全なランダム値を作成して settings.yml に保存する
+    if not data.get("SESSION_SECRET"):
+        data["SESSION_SECRET"] = secrets.token_urlsafe(48)
+        save_setting_data(data)
+
+    return data
 
 
 def save_setting_data(data):
