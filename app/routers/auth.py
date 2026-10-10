@@ -14,11 +14,26 @@ from app.utils import settings
 
 router = APIRouter(tags=["Authentication"])
 
-flow = Flow.from_client_secrets_file(
-    "client_secret.json",
-    scopes=["openid", "https://www.googleapis.com/auth/userinfo.email"],
-    redirect_uri=settings["REDIRECT_URI"]
-)
+def _create_flow(state=None):
+    """Create a fresh Flow instance per request.
+    Setting state is best-effort (Flow implementations may store it as .state or ._state).
+    """
+    flow = Flow.from_client_secrets_file(
+        "client_secret.json",
+        scopes=["openid", "https://www.googleapis.com/auth/userinfo.email"],
+        redirect_uri=settings["REDIRECT_URI"]
+    )
+    if state is not None:
+        try:
+            flow.state = state
+        except Exception:
+            # fallback for implementations using a different attribute name
+            try:
+                setattr(flow, "_state", state)
+            except Exception:
+                pass
+    return flow
+
 
 
 async def _build_member_detail(db: AsyncSession, member_id) -> dict:
@@ -138,6 +153,7 @@ async def logout(request: Request, db: AsyncSession = Depends(get_db)):
     description="Google認証URLを取得します。",
 )
 async def get_authorization_url(request: Request):
+    flow = _create_flow()
     url, state = flow.authorization_url()
     request.session["state"] = state
     return dict(url=url, state=state)
