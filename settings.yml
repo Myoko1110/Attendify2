@@ -4,6 +4,7 @@ ORIGINS:
 DEBUG: false
 AUTO_INSERT_TIME: '21:00'
 SCHEDULER_ENABLED: false
+SESSION_EXPIRE: 30
 grade:
   senior3:
     generation: 47

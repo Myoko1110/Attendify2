@@ -99,7 +99,7 @@ async def login(request: Request, code: str = Form(), state: str = Form(),
     return JSONResponse(await _build_member_detail(db, member.id))
 
 
-@router.post(
+"""@router.post(
     "/login/temp",
     summary="ログイン",
     description="ログインします。",
@@ -116,7 +116,7 @@ async def login_temp(request: Request, generation: int = Form(), part: Part = Fo
 
     return JSONResponse(await _build_member_detail(db, member.id))
 
-
+"""
 @router.get(
     "/logout",
     summary="ログアウト",
