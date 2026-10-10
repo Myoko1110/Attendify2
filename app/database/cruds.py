@@ -1,6 +1,9 @@
 import calendar
 import datetime
 import secrets
+import hashlib
+import hmac
+import os
 from typing import Any, Sequence
 from uuid import UUID
 
@@ -21,10 +24,22 @@ from app.database.models import Attendance, AttendanceLog, AttendanceRate, Gener
 from app.schemas import MembershipStatusPeriodParams, \
     WeeklyParticipationParams
 from app.schemas.rbac import GenerationRole as GenerationRoleSchema
+from app.utils import settings
+
+SESSION_LEFT_TIME = datetime.timedelta(days=settings["SESSION_EXPIRE"])
 
 
 def generate_token():
     return secrets.token_urlsafe(256)
+
+
+def _hash_token(token: str) -> str:
+    """トークンの HMAC-SHA256 ハッシュを返す。SESSION_SECRET は環境変数 SESSION_SECRET
+    から読み、なければ settings の SESSION_SECRET を使用する。"""
+    secret = os.environ.get("SESSION_SECRET") or settings.get("SESSION_SECRET")
+    if not secret:
+        raise RuntimeError("SESSION_SECRET is not set")
+    return hmac.new(secret.encode(), token.encode(), hashlib.sha256).hexdigest()
 
 
 async def get_attendances(db: AsyncSession, *, part: Part = None, generation: int = None,
@@ -480,8 +495,12 @@ async def remove_member(db: AsyncSession, member_id: UUID) -> None:
 
 
 async def get_session_by_valid_token(db: AsyncSession, token: str) -> Session | None:
-    """有効なセッショントークンから Session を取得（member もロード）。"""
-    stmt = select(Session).where(Session.token == token).options(selectinload(Session.member))
+    """有効なセッショントークンから Session を取得（member もロード）。
+
+    DB にはトークンのハッシュを保存しているため、受け取ったトークンをハッシュ化して照合する。
+    """
+    token_hash = _hash_token(token)
+    stmt = select(Session).where(Session.token == token_hash, Session.created_at > utils.now() - SESSION_LEFT_TIME).options(selectinload(Session.member))
     result = await db.execute(stmt)
     session = result.scalar_one_or_none()
     if not session:
@@ -802,9 +821,13 @@ async def remove_schedule(db: AsyncSession, date: datetime.date):
 
 
 async def create_session(db: AsyncSession, member: Member) -> str:
+    """新しいセッションを作成し、クライアントに渡すトークン（平文）を返す。
+
+    DB にはトークンのハッシュを保存する（平文は保存しない）。"""
     token = generate_token()
+    token_hash = _hash_token(token)
     session = Session(
-        token=token,
+        token=token_hash,
         member_id=member.id,
     )
 
@@ -814,7 +837,8 @@ async def create_session(db: AsyncSession, member: Member) -> str:
 
 
 async def remove_session(db: AsyncSession, token: str):
-    await db.execute(delete(Session).where(Session.token == token))
+    token_hash = _hash_token(token)
+    await db.execute(delete(Session).where(Session.token == token_hash))
     await db.commit()
 
 
