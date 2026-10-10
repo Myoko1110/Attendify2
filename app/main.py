@@ -81,7 +81,7 @@ async def _ensure_scheduler_stopped() -> dict:
     return {"enabled": False, "running": False}
 
 
-@app.get(
+"""@app.get(
     "/db",
     summary="データベースをダウンロード",
     dependencies=[Depends(get_valid_session)],
@@ -91,7 +91,7 @@ async def get_db():
     return FileResponse(
         path="attendify.db",
         filename=f"attendify_{now.strftime('%Y%m%d%H%M%S')}.db",
-    )
+    )"""
 
 
 @app.get(
