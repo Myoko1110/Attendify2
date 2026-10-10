@@ -92,6 +92,8 @@ async def login(request: Request, code: str = Form(), state: str = Form(),
         raise APIErrorCode.INVALID_AUTHENTICATION_CREDENTIALS.of("Authentication failed", 400)
 
     try:
+        flow = _create_flow()
+        flow.code_verifier = request.session.get("code_verifier")
         flow.fetch_token(code=code)
 
         session = flow.authorized_session()
@@ -156,4 +158,5 @@ async def get_authorization_url(request: Request):
     flow = _create_flow()
     url, state = flow.authorization_url()
     request.session["state"] = state
+    request.session["code_verifier"] = getattr(flow, "code_verifier", None)  # PKCEが有効な場合に必要
     return dict(url=url, state=state)
