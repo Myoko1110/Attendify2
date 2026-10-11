@@ -1,20 +1,22 @@
-import datetime
+import os
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-import os
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.openapi.utils import get_openapi
 from starlette.middleware.sessions import SessionMiddleware
-from starlette.responses import FileResponse, JSONResponse
+from starlette.responses import JSONResponse
 
 from .abc.api_error import APIError
-from .dependencies import get_valid_session, require_permission
-from .routers import attendance, attendance_export, attendance_log, auth, constant, group, member, membership_status, pre_attendance, \
+from .dependencies import require_permission
+from .routers import attendance, attendance_export, attendance_log, auth, constant, group, member, membership_status, \
+    pre_attendance, \
     rbac, schedule
 from .services.attendance_service import auto_insert_daily_attendances
 from .utils import save_setting_data, settings
 
-app = FastAPI()
+app = FastAPI(openapi_url=None, redoc_url=None, docs_url=None)
 
 api = APIRouter(prefix="/api")
 api.include_router(auth.router)
@@ -129,6 +131,22 @@ async def stop_scheduler():
     return await _ensure_scheduler_stopped()
 
 
+## openapiへのアクセス制限
+@app.get("/openapi.json", dependencies=[Depends(require_permission("dashboard:access"))], include_in_schema=False)
+async def _get_openapi():
+    return get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+
+
+@app.get("/docs", dependencies=[Depends(require_permission("dashboard:access"))], include_in_schema=False)
+def _get_documentation():
+    return get_swagger_ui_html(openapi_url="/openapi.json", title="docs")
+
+
 @app.exception_handler(HTTPException)
 def on_api_error(_, exc: HTTPException):
     return JSONResponse(status_code=exc.status_code, content=dict(
@@ -190,4 +208,5 @@ async def on_shutdown():
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
